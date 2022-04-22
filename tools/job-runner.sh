@@ -598,11 +598,15 @@ imports(){
 
 }
 
-# exports may also be interdependent: -e
-exports(){
+prepare_exports(){
     [ "${IMPORTS_OK}" == "false" ] \
         && echo ERROR: imports are in error - skipping exports \
         && return 1 # exports depend on imports
+
+    # these particular exports are not allowed to fail:
+    if [ "${RUN_CPR_UUID}" == "true" ]; then
+        run-job exports_cpr_uuid || return 2
+    fi
 
     if [ "${RUN_CACHE_LORACACHE}" == "true" ]; then
         run-job exports_cache_loracache || return 2
@@ -615,54 +619,52 @@ exports(){
     if [ "${RUN_CACHE_HISTORIC_SKIP_PAST_LORACACHE}" == "true" ]; then
         run-job exports_historic_skip_past_cache_loracache || return 2
     fi
-
+    
     if [ "${RUN_LC_FOR_JOBS_DB_EXPORT}" == "true" ]; then
         run-job exports_lc_for_jobs_db || return 2
     fi
+}
 
+exports(){
+    [ "${PREPARE_EXPORTS_OK}" == "false" ] \
+        && echo "ERROR in preparing exports" \
+        && return 1 
+    # Remaining exports are independent an can be run concurrently
+    
     if [ "${RUN_ACTUAL_STATE_EXPORT}" == "true" ]; then
-        run-job exports_actual_state_export || return 2
+        run-job exports_actual_state_export &
     fi
 
     if [ "${RUN_HISTORIC_SQL_EXPORT}" == "true" ]; then
-        run-job exports_historic_sql_export || return 2
+        run-job exports_historic_sql_export &
     fi
 
     if [ "${RUN_OS2SYNC}" == "true" ]; then
-        run-job exports_os2sync || return 2
-    fi
-
-    if [ "${RUN_MOX_STS_ORGSYNC}" == "true" ]; then
-        run-job exports_mox_stsorgsync || return 2
+        run-job exports_os2sync &
     fi
 
     if [ "${RUN_QUERIES_BALLERUP}" == "true" ]; then
-        run-job exports_queries_ballerup || return 2
+        run-job exports_queries_ballerup &
     fi
 
     if [ "${RUN_EXPORT_EMUS}" == "true" ]; then
-        run-job exports_viborg_emus || return 2
+        run-job exports_viborg_emus &
     fi
 
     if [ "${RUN_EXPORTS_VIBORG_EKSTERNE}" == "true" ]; then
-        run-job exports_viborg_eksterne || return 2
+        run-job exports_viborg_eksterne &
     fi
 
     if [ "${RUN_EXPORTS_OS2MO_PHONEBOOK}" == "true" ]; then
-        run-job exports_os2phonebook_export || return 2
+        run-job exports_os2phonebook_export &
     fi
 
     if [ "${RUN_EXPORTS_MO_UUID_TO_AD}" == "true" ]; then
-        run-job exports_sync_mo_uuid_to_ad || return 2
-    fi
-
-    if [ "${RUN_CPR_UUID}" == "true" ]; then
-        # this particular report is not allowed to fail
-        run-job exports_cpr_uuid || return 2
+        run-job exports_sync_mo_uuid_to_ad &
     fi
 
     if [ "${RUN_EXPORTS_AD_LIFE_CYCLE}" == "true" ]; then
-        run-job exports_ad_life_cycle || return 2
+        run-job exports_ad_life_cycle &
     fi
 
     if [ "${RUN_EXPORTS_AD_LIFE_CYCLE_DISABLE_ACCOUNTS}" == "true" ]; then
@@ -699,23 +701,23 @@ reports(){
         && return 1 # reports depend on imports
 
     if [ "${RUN_SD_DB_OVERVIEW}" == "true" ]; then
-        run-job reports_sd_db_overview || return 2
+        run-job reports_sd_db_overview &
     fi
 
     if [ "${RUN_VIBORG_MANAGERS}" == "true" ]; then
-        run-job reports_viborg_managers || return 2
+        run-job reports_viborg_managers &
     fi
 
     if [ "${RUN_REPORTS_FREDERIKSHAVN}" == "true" ]; then
-        run-job reports_frederikshavn || return 2
+        run-job reports_frederikshavn &
     fi
 
     if [ "${RUN_REPORTS_SVENDBORG}" == "true" ]; then
-        run-job reports_svendborg || return 2
+        run-job reports_svendborg &
     fi
 
     if [ "${RUN_REPORTS_CSV}" == "true" ]; then
-        run-job reports_csv || return 2
+        run-job reports_csv &
     fi
 
 }
@@ -862,8 +864,9 @@ if [ "${JOB_RUNNER_MODE}" == "running" -a "$#" == "0" ]; then
             echo "Skipping MO data sanity check"
         fi
         imports && IMPORTS_OK=true
-        exports && EXPORTS_OK=true
-        reports && REPORTS_OK=true
+        prepare_exports && PREPARE_EXPORTS_OK=true
+        exports &
+        reports &
         echo
 
         post_backup
