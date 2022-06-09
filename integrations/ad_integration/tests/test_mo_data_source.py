@@ -4,9 +4,89 @@ import pytest
 
 from ..ad_writer import EngagementDatesError
 from ..ad_writer import LoraCacheSource
+from ..ad_writer import MOGraphqlSource
 from ..ad_writer import MORESTSource
 from ..utils import AttrDict
 from .mocks import MockMORESTSource
+
+
+def mock_MOGraphqlSource(return_value):
+    mock_source = MOGraphqlSource
+    mock_source._read_employees = lambda x, y: return_value
+    return mock_source({})
+
+
+class TestMOGraphqlSource(TestCase):
+    # TODO: parameterize or use hypothesis
+    def test_create_manager_map_no_manager(self):
+        test_data = [
+            {
+                "uuid": "0004b952-a513-430b-b696-8d393d7eb2bb",
+                "objects": [{"engagements": []}],
+            }
+        ]
+        mock_source = mock_MOGraphqlSource(test_data)
+        assert mock_source.manager_map == {"0004b952-a513-430b-b696-8d393d7eb2bb": None}
+
+    def test_create_manager_map_has_manager(self):
+        test_data = [
+            {
+                "uuid": "002a1aed-d015-4b86-86a4-c37cd8df1e18",
+                "objects": [
+                    {
+                        "engagements": [
+                            {
+                                "employee_uuid": "002a1aed-d015-4b86-86a4-c37cd8df1e18",
+                                "uuid": "4656c111-d1e5-4a0d-9514-633b03e4f60f",
+                                "is_primary": True,
+                                "org_unit": [
+                                    {
+                                        "managers": [
+                                            {
+                                                "employee_uuid": "30b2f8fa-e7c6-43c3-ae59-6649b60e78d2"
+                                            }
+                                        ]
+                                    }
+                                ],
+                            }
+                        ]
+                    }
+                ],
+            }
+        ]
+        mock_source = mock_MOGraphqlSource(test_data)
+        assert mock_source.manager_map == {
+            "002a1aed-d015-4b86-86a4-c37cd8df1e18": "30b2f8fa-e7c6-43c3-ae59-6649b60e78d2"
+        }
+
+    def test_create_manager_map_has_manager_not_primary(self):
+        test_data = [
+            {
+                "uuid": "002a1aed-d015-4b86-86a4-c37cd8df1e18",
+                "objects": [
+                    {
+                        "engagements": [
+                            {
+                                "employee_uuid": "002a1aed-d015-4b86-86a4-c37cd8df1e18",
+                                "uuid": "4656c111-d1e5-4a0d-9514-633b03e4f60f",
+                                "is_primary": None,
+                                "org_unit": [
+                                    {
+                                        "managers": [
+                                            {
+                                                "employee_uuid": "30b2f8fa-e7c6-43c3-ae59-6649b60e78d2"
+                                            }
+                                        ]
+                                    }
+                                ],
+                            }
+                        ]
+                    }
+                ],
+            }
+        ]
+        mock_source = mock_MOGraphqlSource(test_data)
+        assert mock_source.manager_map == {"002a1aed-d015-4b86-86a4-c37cd8df1e18": None}
 
 
 class TestLoraCacheSource(TestCase):

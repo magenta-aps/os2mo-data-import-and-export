@@ -14,6 +14,7 @@ from functools import partial
 from operator import itemgetter
 
 import click
+import jmespath
 from click_option_group import optgroup
 from click_option_group import RequiredMutuallyExclusiveOptionGroup
 from gql import gql
@@ -295,6 +296,7 @@ class MOGraphqlSource:
                 engagements {
                     employee_uuid
                     uuid
+                    is_primary
                     org_unit {
                     managers(inherit: true) {
                         employee_uuid
@@ -317,15 +319,22 @@ class MOGraphqlSource:
         ) as session:
 
             r = session.execute(query)
-        return r
+        return r["employees"]
 
-    def _create_manager_map(employees):
+    def _create_manager_map(self, employees):
         """Create mapping between employees and managers"""
-        pass
+        # For each employee we need to find the manager uuid which is associated by the org_unit of the primary engagement.
+        # So the path is engagements - filter by primary, org_unit, manager, uuid
+        # At last the result is piped into [0] to get the value and not an array.
+        # https://jmespath.org/tutorial.html#pipe-expressions
+        manager_uuid = jmespath.compile(
+            "objects[0].engagements[?is_primary].org_unit[0].managers[0].employee_uuid | [0]"
+        )
+        return {e["uuid"]: manager_uuid.search(e) for e in employees}
 
     def get_manager_uuid(self, mo_user, eng_uuid):
         """Lookup manager for employee"""
-        pass
+        return self.manager_map[mo_user]
 
 
 class MORESTSource(MODataSource):
