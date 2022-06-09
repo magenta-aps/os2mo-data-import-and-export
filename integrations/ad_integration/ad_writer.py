@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import json
 import logging
+import os
 import random
 import re
 import time
@@ -15,6 +16,7 @@ from operator import itemgetter
 import click
 from click_option_group import optgroup
 from click_option_group import RequiredMutuallyExclusiveOptionGroup
+from gql import gql
 from jinja2 import Environment
 from jinja2 import StrictUndefined
 from jinja2 import Undefined
@@ -24,6 +26,7 @@ from os2mo_helpers.mora_helpers import MoraHelper
 from ra_utils.lazy_dict import LazyDict
 from ra_utils.lazy_dict import LazyEval
 from ra_utils.lazy_dict import LazyEvalDerived
+from raclients.graph.client import GraphQLClient
 
 from . import ad_templates
 from .ad_common import AD
@@ -276,6 +279,55 @@ class LoraCacheSource(MODataSource):
         return {it_system["itsystem"]: it_system for it_system in user_itsystems}
 
 
+class MOGraphqlSource:
+    """MO Graphql."""
+
+    def __init__(self, settings):
+        self.employees = self._read_employees(settings)
+        self.manager_map = self._create_manager_map(self.employees)
+
+    def _read_employees(self, settings):
+        query = gql(
+            """query read_employees {
+            employees(to_date: null) {
+                uuid
+                objects {
+                engagements {
+                    employee_uuid
+                    uuid
+                    org_unit {
+                    managers(inherit: true) {
+                        employee_uuid
+                    }
+                    }
+                }
+                }
+            }
+        }
+        """
+        )
+        with GraphQLClient(
+            url=f"{settings['global']['mora.base']}/graphql",
+            client_id=os.environ.get("CLIENT_ID", "dipex"),
+            client_secret=os.environ["CLIENT_SECRET"],
+            auth_realm=os.environ.get("AUTH_REALM", "mo"),
+            auth_server=os.environ["AUTH_SERVER"],
+            sync=True,
+            httpx_client_kwargs={"timeout": None},
+        ) as session:
+
+            r = session.execute(query)
+        return r
+
+    def _create_manager_map(employees):
+        """Create mapping between employees and managers"""
+        pass
+
+    def get_manager_uuid(self, mo_user, eng_uuid):
+        """Lookup manager for employee"""
+        pass
+
+
 class MORESTSource(MODataSource):
     """MO REST implementation of the MODataSource interface."""
 
@@ -390,6 +442,10 @@ class ADWriter(AD):
         self.helper = MoraHelper(
             hostname=self.settings["global"]["mora.base"], use_cache=False
         )
+        # Read manager information with graphql
+        graphql = MOGraphqlSource(self.settings)
+        # overwrite method no matter what datasource.
+        self.datasource.get_manager_uuid = graphql.get_manager_uuid
 
         self._init_name_creator()
 
