@@ -296,7 +296,7 @@ class MOGraphqlSource:
                 engagements {
                     employee_uuid
                     uuid
-                    is_primary
+                    is_primary(show_is_primary: true)
                     org_unit {
                     managers(inherit: true) {
                         employee_uuid
