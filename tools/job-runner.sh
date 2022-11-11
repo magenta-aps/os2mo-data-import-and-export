@@ -819,58 +819,57 @@ post_backup(){
 }
 
 if [ "${JOB_RUNNER_MODE}" == "running" -a "$#" == "0" ]; then
-    (
-        # Dette er den sektion, der kaldes fra CRON (ingen argumenter)
+    
+    # Dette er den sektion, der kaldes fra CRON (ingen argumenter)
 
-        if [ ! -d "${VENV}" ]; then
-            REASON="FATAL: python env not found"
+    if [ ! -d "${VENV}" ]; then
+        REASON="FATAL: python env not found"
+        echo ${REASON}
+        exit 2 # error
+    fi
+
+    if [ ! -d "${CRON_BACKUP}" ]; then
+        REASON="FATAL: Backup directory non existing"
+        echo ${REASON}
+        exit 2
+    fi
+
+    if [[ ${RUN_DB_BACKUP} == "true" ]] && [[ ! -f "${SNAPSHOT_LORA}" ]]; then
+        REASON="FATAL: Database snapshot does not exist"
+        echo ${REASON}
+        exit 2
+    fi
+
+    if [ -n "${SVC_USER}" -a -n "${SVC_KEYTAB}" ]; then
+        [ -r "${SVC_KEYTAB}" ] || echo WARNING: cannot read keytab
+        kinit ${SVC_USER} -k -t ${SVC_KEYTAB} || (
+            REASON="WARNING: not able to refresh kerberos auth - authentication failure"
             echo ${REASON}
-            exit 2 # error
-        fi
+        )
+    else
+        REASON="WARNING: not able to refresh kerberos auth - username or keytab missing"
+        echo ${REASON}
+    fi
 
-        if [ ! -d "${CRON_BACKUP}" ]; then
-            REASON="FATAL: Backup directory non existing"
-            echo ${REASON}
-            exit 2
-        fi
+    # Vi sletter lora-cache-picklefiler og andet inden vi kører cronjobbet
+    rm tmp/*.p 2>/dev/null || :
 
-        if [[ ${RUN_DB_BACKUP} == "true" ]] && [[ ! -f "${SNAPSHOT_LORA}" ]]; then
-            REASON="FATAL: Database snapshot does not exist"
-            echo ${REASON}
-            exit 2
-        fi
+    export BUPFILE=${CRON_BACKUP}/$(date +%Y-%m-%d-%H-%M-%S)-cron-backup.tar
 
-        if [ -n "${SVC_USER}" -a -n "${SVC_KEYTAB}" ]; then
-            [ -r "${SVC_KEYTAB}" ] || echo WARNING: cannot read keytab
-            kinit ${SVC_USER} -k -t ${SVC_KEYTAB} || (
-                REASON="WARNING: not able to refresh kerberos auth - authentication failure"
-                echo ${REASON}
-            )
-        else
-            REASON="WARNING: not able to refresh kerberos auth - username or keytab missing"
-            echo ${REASON}
-        fi
+    pre_backup
 
-        # Vi sletter lora-cache-picklefiler og andet inden vi kører cronjobbet
-        rm tmp/*.p 2>/dev/null || :
+    if [[ ${RUN_MO_DATA_SANITY_CHECK} == "true" ]]; then
+        run-job sanity_check_mo_data || echo Sanity check failed
+    else
+        echo "Skipping MO data sanity check"
+    fi
+    imports && IMPORTS_OK=true
+    prepare_exports && PREPARE_EXPORTS_OK=true
+    exports &
+    reports &
+    echo
 
-        export BUPFILE=${CRON_BACKUP}/$(date +%Y-%m-%d-%H-%M-%S)-cron-backup.tar
-
-        pre_backup
-
-        if [[ ${RUN_MO_DATA_SANITY_CHECK} == "true" ]]; then
-            run-job sanity_check_mo_data || echo Sanity check failed
-        else
-            echo "Skipping MO data sanity check"
-        fi
-        imports && IMPORTS_OK=true
-        prepare_exports && PREPARE_EXPORTS_OK=true
-        exports &
-        reports &
-        echo
-
-        post_backup
-    ) > ${CRON_LOG_FILE} 2>&1
+    post_backup
 elif [ "${JOB_RUNNER_MODE}" == "running" ]; then
     if [ -n "$(grep $1\(\) $0)" ]; then
         echo "running single job function '$1'"
