@@ -60,7 +60,6 @@ BACK_UP_BEFORE_JOBS+=(
 # files that need to be backed up AFTER running the jobs
 # should be appended to BACK_UP_AFTER_JOBS
 declare -a BACK_UP_AFTER_JOBS=(
-    ${CRON_LOG_FILE}
     # 2 files only exists at SD customers running changed at/cpr_uuid
     # always take them if they are there
     $([ -f "${DIPEXAR}/cpr_mo_ad_map.csv" ] && echo "${DIPEXAR}/cpr_mo_ad_map.csv")
