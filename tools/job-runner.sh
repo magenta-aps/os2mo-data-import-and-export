@@ -9,6 +9,7 @@ export BACKUP_MAX_SECONDS_AGE=${BACKUP_MAX_SECONDS_AGE:=120}
 export VENV=${VENV:=${DIPEXAR}/.venv}
 export POETRYPATH=${POETRYPATH:=/home/$(whoami)/.local/bin/poetry}
 export IMPORTS_OK=false
+export PREPARE_EXPORTS_OK=false
 export EXPORTS_OK=false
 export REPORTS_OK=false
 export BACKUP_OK=true
