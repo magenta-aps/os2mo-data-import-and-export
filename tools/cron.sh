@@ -75,4 +75,4 @@ fi
 
 # Run script
 #-----------
-su --shell /bin/bash --command "${SCRIPT}" ${RUNAS} |& systemd-cat -t "dipex:cron.sh"
+su --shell /bin/bash --command "${SCRIPT}" ${RUNAS} |& systemd-cat -t "dipex:job-runner.sh"
