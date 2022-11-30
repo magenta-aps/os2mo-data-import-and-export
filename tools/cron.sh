@@ -7,7 +7,7 @@
 #--------------
 # Absolute path to the job-runner.sh script
 # SCRIPT=... (must be set via environmental variable).
-
+set -e
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 SCRIPT=${SCRIPT:-${DIR}/job-runner.sh}
 BACKUP_SCRIPT=${BACKUP_SCRIPT:-${DIR}/backup.sh}
@@ -45,10 +45,6 @@ fi
 #------------------
 if [[ ${RUN_DB_BACKUP} == "true" ]]; then
     bash ${BACKUP_SCRIPT}
-    EXIT_CODE=$?
-    if [ ${EXIT_CODE} -ne 0 ]; then
-        exit 1
-    fi
 fi
 
 # Run script
