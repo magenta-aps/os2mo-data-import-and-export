@@ -488,7 +488,7 @@ def get_sts_orgunit(uuid: str, settings):
         logger.error(msg)
         raise ValueError(msg)
 
-    sts_org_unit = {"ItSystemUuids": [], "Name": base["name"], "Uuid": uuid}
+    sts_org_unit = {"ItSystemUuids": [], "Name": base["name"], "Uuid": uuid, "ShortKey": base["user_key"]}
 
     if base.get("parent") and "uuid" in base["parent"]:
         sts_org_unit["ParentOrgUnitUuid"] = base["parent"]["uuid"]
