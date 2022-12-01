@@ -14,7 +14,7 @@ BACKUP_SCRIPT=${BACKUP_SCRIPT:-${DIR}/backup.sh}
 
 # Enable DB backup per default (override in settings.json
 # prefixed with "crontab" if needed)
-RUN_DB_BACKUP=${RUN_DB_BACKUP:-true}
+RUN_DB_BACKUP=true
 
 # Unix service account to run job-runner.sh under
 RUNAS=${RUNAS:-sys_magenta_dipex}
@@ -43,6 +43,7 @@ fi
 
 # Database snapshot
 #------------------
+source ${DIR}/prefixed_settings.sh
 if [[ ${RUN_DB_BACKUP} == "true" ]]; then
     bash ${BACKUP_SCRIPT}
 fi
