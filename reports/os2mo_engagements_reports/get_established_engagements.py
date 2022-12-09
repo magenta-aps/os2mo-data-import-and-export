@@ -1,25 +1,26 @@
 from uuid import UUID
-from datetime import datetime
-from typing import List, Dict, Any
-from more_itertools import flatten
+from datetime import datetime, date
+from typing import List
+
+from dateutil import utils
 from more_itertools import one
 from fastapi.encoders import jsonable_encoder
 
 from gql import gql
 
-from reports.os2mo_engagements_reports.config import EngagementSettings
+# from reports.os2mo_engagements_reports.config import EngagementSettings
 from reports.os2mo_engagements_reports import config
 
-
 from raclients.graph.client import GraphQLClient
+from ra_utils.job_settings import JobSettings
 
 
-def established_person_engagements(settings: EngagementSettings) -> list:
+def established_person_engagements(settings: JobSettings) -> list:
     """Reading all of active engagements with the persons uuids engagement start date."""
 
     graphql_query = gql(
-        """query EstablishedEngagements {
-             engagements(from_date: "2022-01-01") {
+        """query EstablishedEngagements ($engagement_date_to_query_from: DateTime) {
+             engagements(from_date: $engagement_date_to_query_from) {
                objects {
                  employee_uuid
                  validity {
@@ -30,7 +31,7 @@ def established_person_engagements(settings: EngagementSettings) -> list:
            }
         """
     )
-    assert 55 == 55
+    variables = {"engagement_date_to_query_from": date.today().isoformat()}
     with GraphQLClient(
         url=f"{settings.mora_base}/graphql/v3",
         client_id=settings.client_id,
@@ -40,25 +41,27 @@ def established_person_engagements(settings: EngagementSettings) -> list:
         sync=True,
         httpx_client_kwargs={"timeout": None},
     ) as session:
-        response = session.execute(graphql_query)
+        response = session.execute(
+            graphql_query, variable_values=jsonable_encoder(variables)
+        )
         # Filter by start date being as of today at runtime.
         filtered_dates = filter(
-            lambda startdate: one(startdate["objects"])["validity"]["from"] == "2021-07-09T00:00:00+02:00",
-            # datetime.now().isoformat(timespec='seconds')
-            response["engagements"]
+            lambda startdate: datetime.fromisoformat(
+                one(startdate["objects"])["validity"]["from"]
+            ).replace(tzinfo=None)
+            == utils.today(),
+            response["engagements"],
         )
-        assert 3 == 3
     extracted_uuids = []
     for obj in filtered_dates:
         extracted_uuids.append(obj["objects"][0]["employee_uuid"])
-    assert 4 == 4
     return extracted_uuids
 
 
-def persons_details_from_engagement(settings: EngagementSettings, uuidlist: List[UUID]) -> dict:
+def persons_details_from_engagement(
+    settings: JobSettings, uuidlist: List[UUID]
+) -> dict:
     """Retrieving all desired details on the person from the active filtered engagements."""
-#    uuid_list = established_person_engagements(settings)
-    assert 9 == 9
     graphql_query = gql(
         """query PersonEngagementDetails ($uuidlist: [UUID!]) {
              employees(uuids: $uuidlist) {
@@ -84,7 +87,6 @@ def persons_details_from_engagement(settings: EngagementSettings, uuidlist: List
         """
     )
     variables = {"uuidlist": uuidlist}
-    assert 1 == 1
     with GraphQLClient(
         url=f"{settings.mora_base}/graphql/v3",
         client_id=settings.client_id,
@@ -95,23 +97,20 @@ def persons_details_from_engagement(settings: EngagementSettings, uuidlist: List
         httpx_client_kwargs={"timeout": None},
     ) as session:
         r = session.execute(graphql_query, variable_values=jsonable_encoder(variables))
-    assert 2 == 2
-
     return r
 
 
-def display_engagements(settings: EngagementSettings):
+def display_engagements(settings: JobSettings):
     list_of_eligible_persons_uuids = established_person_engagements(settings)
 
-    detailed_engagements = persons_details_from_engagement(settings, list_of_eligible_persons_uuids)
-
-    assert 3 == 3
+    detailed_engagements = persons_details_from_engagement(
+        settings, list_of_eligible_persons_uuids
+    )
 
     return detailed_engagements
 
 
 def main() -> None:
-    print("Starting session")
     pass
 
 
