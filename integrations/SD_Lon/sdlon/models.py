@@ -27,6 +27,7 @@ class SDDepartment(BaseModel):
     DeactivationDate: date
     DepartmentIdentifier: str
     DepartmentLevelIdentifier: str
+    DepartmentName: Optional[str]
     DepartmentUUIDIdentifier: Optional[UUID]
 
 
@@ -34,14 +35,20 @@ class SDGetDepartmentReq(BaseModel):
     """
     Query parameters for SDs GetDepartment20111201 endpoint
     """
-    # TODO: add missing fields
     InstitutionIdentifier: Optional[str]
     InstitutionUUIDIdentifier: Optional[UUID]
     DepartmentIdentifier: Optional[str]
     DepartmentUUIDIdentifier: Optional[UUID]
     ActivationDate: date
     DeactivationDate: date
+    # ContactInformationIndicator: bool = False
+    DepartmentNameIndicator: bool = False
+    # EmploymentDepartmentIndicator: bool = False
+    # PostalAddressIndicator: bool = False
+    # ProductionUnitIndicator: bool = False
+    UUIDIndicator: bool = False
 
+    # TODO: check what is actually required
     @root_validator
     def check_values(cls, values):
         institution_identifier = values.get("InstitutionIdentifier")
@@ -55,8 +62,6 @@ class SDGetDepartmentReq(BaseModel):
             raise ValueError("Only one of InstitutionIdentifier and InstitutionUUIDIdentifier can be set")
         if department_identifier is not None and department_uuid_identifier is not None:
             raise ValueError("Only one of DepartmentIdentifier and DepartmentUUIDIdentifier can be set")
-        if department_identifier is None and department_uuid_identifier is None:
-            raise ValueError("Exactly one of DepartmentIdentifier or DepartmentUUIDIdentifier can be set")
 
         return values
 
