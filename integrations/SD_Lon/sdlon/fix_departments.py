@@ -12,6 +12,8 @@ import click
 import requests
 from os2mo_helpers.mora_helpers import MoraHelper
 
+from sdlon.models import SDGetDepartmentReq
+from sdlon.sd_client import get_department, SDClient
 from .date_utils import (
     datetime_to_sd_date,
     parse_date,
@@ -575,7 +577,31 @@ def unit_fixer(short_names, uuids):
 @cli.command()
 def fix_entire_ou_tree():
     settings = get_changed_at_settings()
+
     fd = FixDepartments(settings)
+    sd = SDClient(settings.sd_user, settings.sd_password.get_secret_value())
+
+    today = datetime.datetime.today()
+
+    sd_department_resp = sd.get_department(
+        SDGetDepartmentReq(
+            InstitutionIdentifier=settings.sd_institution_identifier,
+            ActivationDate=today.date(),
+            DeactivationDate=today.date(),
+            DepartmentNameIndicator=True,
+            UUIDIndicator=True,
+        )
+    )
+    for department in sd_department_resp.departments:
+        logger.debug(
+            f"Fixing {department.DepartmentName} with UUID {str(department.DepartmentUUIDIdentifier)}..."
+        )
+        fd.fix_department(
+            str(department.DepartmentUUIDIdentifier), today, False
+        )
+        logger.info(
+            f"Fixed {department.DepartmentName} with UUID {str(department.DepartmentUUIDIdentifier)}"
+        )
 
 
 if __name__ == "__main__":
