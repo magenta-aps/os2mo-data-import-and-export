@@ -13,7 +13,7 @@ import requests
 from os2mo_helpers.mora_helpers import MoraHelper
 
 from sdlon.models import SDGetDepartmentReq
-from sdlon.sd_client import get_department, SDClient
+from sdlon.sd_client import SDClient
 from .date_utils import (
     datetime_to_sd_date,
     parse_date,
