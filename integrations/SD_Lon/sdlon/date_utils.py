@@ -5,7 +5,7 @@ from datetime import datetime
 from datetime import timedelta
 from itertools import chain
 from itertools import takewhile
-from typing import OrderedDict
+from typing import OrderedDict, Union
 from typing import Iterator
 from typing import Optional
 from typing import Tuple
@@ -38,7 +38,7 @@ def parse_date(date_str: str) -> datetime:
     return datetime.strptime(date_str, "%Y-%m-%d")
 
 
-def datetime_to_sd_date(date_time: datetime) -> str:
+def datetime_to_sd_date(date_time: Union[datetime, date]) -> str:
     return date_time.strftime("%d.%m.%Y")
 
 
