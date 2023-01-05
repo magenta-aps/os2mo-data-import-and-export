@@ -8,11 +8,15 @@ from more_itertools import one
 from fastapi.encoders import jsonable_encoder
 
 from gql import gql
+from gql.client import SyncClientSession
 
+import pandas as pd
 from raclients.graph.client import GraphQLClient
 from ra_utils.job_settings import JobSettings
-import pandas as pd
-from reports.os2mo_engagements_reports import config
+from reports.os2mo_new_and_ended_engagement_reports import config
+from reports.os2mo_new_and_ended_engagement_reports.config import EngagementSettings
+from reports.os2mo_new_and_ended_engagement_reports.config import setup_gql_client
+from reports.os2mo_new_and_ended_engagement_reports.config import get_engagement_settings
 
 
 def gql_query_validity_field(
@@ -99,7 +103,8 @@ def gql_query_persons_details_to_display(
 
 
 def established_person_engagements(
-    settings: JobSettings,
+    gql_session: SyncClientSession,
+
     validity_field_from: bool = None,
     validity_field_to: bool = None,
 ) -> dict:
@@ -118,22 +123,25 @@ def established_person_engagements(
     if validity_field_from:
         graphql_query = gql(gql_query_validity_field(validity_from=True))
 
-    if validity_field_to:
+    elif validity_field_to:
         graphql_query = gql(gql_query_validity_field(validity_to=True))
 
     variables = {"engagement_date_to_query_from": date.today().isoformat()}
-    with GraphQLClient(
-        url=f"{settings.mora_base}/graphql/v3",
-        client_id=settings.client_id,
-        client_secret=settings.client_secret,
-        auth_realm=settings.auth_realm,
-        auth_server=settings.auth_server,
-        sync=True,
-        httpx_client_kwargs={"timeout": None},
-    ) as session:
-        response = session.execute(
-            graphql_query, variable_values=jsonable_encoder(variables)
-        )
+    # with GraphQLClient(
+    #     url=f"{settings.mora_base}/graphql/v3",
+    #     client_id=settings.client_id,
+    #     client_secret=settings.client_secret,
+    #     auth_realm=settings.auth_realm,
+    #     auth_server=settings.auth_server,
+    #     sync=True,
+    #     httpx_client_kwargs={"timeout": None},
+    # ) as session:
+    #     response = session.execute(
+    #         graphql_query, variable_values=jsonable_encoder(variables)
+    #     )
+
+    response = gql_session.execute(graphql_query, variable_values=jsonable_encoder(variables))
+
     return response
 
 
@@ -205,7 +213,7 @@ def get_filtered_engagements_for_ended_today(gql_query_response: dict) -> List[U
     return extracted_uuids
 
 
-def retrieve_address_types_uuids(settings: JobSettings) -> dict:
+def retrieve_address_types_uuids(gql_session: SyncClientSession) -> dict:
     """
     Reading all types of addresses.
 
@@ -228,16 +236,19 @@ def retrieve_address_types_uuids(settings: JobSettings) -> dict:
            }
         """
     )
-    with GraphQLClient(
-        url=f"{settings.mora_base}/graphql/v3",
-        client_id=settings.client_id,
-        client_secret=settings.client_secret,
-        auth_realm=settings.auth_realm,
-        auth_server=settings.auth_server,
-        sync=True,
-        httpx_client_kwargs={"timeout": None},
-    ) as session:
-        response = session.execute(graphql_query)
+    # with GraphQLClient(
+    #     url=f"{settings.mora_base}/graphql/v3",
+    #     client_id=settings.client_id,
+    #     client_secret=settings.client_secret,
+    #     auth_realm=settings.auth_realm,
+    #     auth_server=settings.auth_server,
+    #     sync=True,
+    #     httpx_client_kwargs={"timeout": None},
+    # ) as session:
+    #     response = session.execute(graphql_query)
+
+    response = gql_session.execute(graphql_query)
+
     return response
 
 
@@ -265,7 +276,7 @@ def get_email_address_type_uuid_from_gql(gql_query_dict: dict) -> list:
 
 
 def persons_details_from_engagement(
-    settings: JobSettings,
+    gql_session: SyncClientSession,
     uuidlist: List[UUID],
     address_type_uuid_list: List[UUID],
     started_engagement_details: bool = False,
@@ -293,19 +304,19 @@ def persons_details_from_engagement(
         graphql_query = gql(gql_query_persons_details_to_display(ended_engagement=True))
 
     variables = {"uuidlist": uuidlist, "email_uuid_list": address_type_uuid_list}
-    with GraphQLClient(
-        url=f"{settings.mora_base}/graphql/v3",
-        client_id=settings.client_id,
-        client_secret=settings.client_secret,
-        auth_realm=settings.auth_realm,
-        auth_server=settings.auth_server,
-        sync=True,
-        httpx_client_kwargs={"timeout": None},
-    ) as session:
-        response = session.execute(
-            graphql_query, variable_values=jsonable_encoder(variables)
-        )
-
+    # with GraphQLClient(
+    #     url=f"{settings.mora_base}/graphql/v3",
+    #     client_id=settings.client_id,
+    #     client_secret=settings.client_secret,
+    #     auth_realm=settings.auth_realm,
+    #     auth_server=settings.auth_server,
+    #     sync=True,
+    #     httpx_client_kwargs={"timeout": None},
+    # ) as session:
+    #     response = session.execute(
+    #         graphql_query, variable_values=jsonable_encoder(variables)
+    #     )
+    response = gql_session.execute(graphql_query, variable_values=jsonable_encoder(variables))
     return response
 
 
@@ -376,7 +387,7 @@ def write_file(contents_of_file, path_to_file):
         file.write(contents_of_file)
 
 
-def display_engagements(settings: JobSettings) -> None:
+def display_engagements(gql_session: SyncClientSession) -> None:
     """
     Calls upon GraphQL queries and various filters defined in this module, to bring together an
     object with all the details wanted on an engagement and on a person.
@@ -384,7 +395,7 @@ def display_engagements(settings: JobSettings) -> None:
     """
 
     # Pulling address types so email uuids can be found.
-    address_type_uuids_and_scopes = retrieve_address_types_uuids(settings)
+    address_type_uuids_and_scopes = retrieve_address_types_uuids(gql_session)
 
     # Finding email uuids.
     list_of_email_uuids = get_email_address_type_uuid_from_gql(
@@ -393,11 +404,11 @@ def display_engagements(settings: JobSettings) -> None:
 
     # Getting active payload with validity field "from" engagements.
     payload_of_started_engagements_objects = established_person_engagements(
-        settings, validity_field_from=True
+        gql_session, validity_field_from=True
     )
     # Getting engagements that have an end-date with validity field "to" engagements.
     payload_of_ended_engagements_objects = established_person_engagements(
-        settings, validity_field_to=True
+        gql_session, validity_field_to=True
     )
 
     # Finding uuids of persons that have started new engagements.
@@ -413,14 +424,14 @@ def display_engagements(settings: JobSettings) -> None:
 
     # Retrieving details on person with new started engagement.
     details_of_started_engagements = persons_details_from_engagement(
-        settings,
+        gql_session,
         list_of_person_uuids_started_engagement,
         list_of_email_uuids,
         started_engagement_details=True,
     )
     # Retrieving details on person with ended engagement.
     details_of_ended_engagements = persons_details_from_engagement(
-        settings,
+        gql_session,
         list_of_person_uuids_ended_engagements,
         list_of_email_uuids,
         ended_engagement_details=True,
@@ -438,19 +449,22 @@ def display_engagements(settings: JobSettings) -> None:
     # Generating a file on newly established engagements.
     write_file(
         started_engagements_data_in_csv,
-        "reports/os2mo_engagements_reports/testing_started_engagement_csv.csv",
+        "reports/os2mo_new_and_ended_engagement_reports/testing_gqlsession_started_engagement_csv.csv",
     )
     # Generating a file  on ended engagements.
     write_file(
         ended_engagements_data_in_csv,
-        "reports/os2mo_engagements_reports/testing_ended_engagement_csv.csv",
+        "reports/os2mo_new_and_ended_engagement_reports/testing_gqlsession_ended_engagement_csv.csv",
     )
 
 
 def main() -> None:
-    settings = config.get_engagement_settings()
+    settings = get_engagement_settings()
     settings.start_logging_based_on_settings()
-    display_engagements(settings)
+
+    gql_session = setup_gql_client(settings=settings)
+
+    display_engagements(gql_session)
 
 
 if __name__ == "__main__":
