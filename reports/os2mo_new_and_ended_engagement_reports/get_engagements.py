@@ -11,16 +11,13 @@ from gql import gql
 from gql.client import SyncClientSession
 
 import pandas as pd
-from raclients.graph.client import GraphQLClient
-from ra_utils.job_settings import JobSettings
-from reports.os2mo_new_and_ended_engagement_reports import config
-from reports.os2mo_new_and_ended_engagement_reports.config import EngagementSettings
+
 from reports.os2mo_new_and_ended_engagement_reports.config import setup_gql_client
 from reports.os2mo_new_and_ended_engagement_reports.config import get_engagement_settings
 
 
 def gql_query_validity_field(
-    validity_from: bool = False, validity_to: bool = False
+        validity_from: bool = False, validity_to: bool = False
 ) -> str:
     """GQL query to return to use as input, depending on what type of engagement is wanted."""
     if validity_from:
@@ -51,7 +48,7 @@ def gql_query_validity_field(
 
 
 def gql_query_persons_details_to_display(
-    started_engagement: bool = False, ended_engagement: bool = False
+        started_engagement: bool = False, ended_engagement: bool = False
 ) -> str:
     """GQL query to return to use as input, depending on what type of engagement is wanted."""
     if started_engagement:
@@ -103,16 +100,15 @@ def gql_query_persons_details_to_display(
 
 
 def established_person_engagements(
-    gql_session: SyncClientSession,
-
-    validity_field_from: bool = None,
-    validity_field_to: bool = None,
+        gql_session: SyncClientSession,
+        validity_field_from: bool = None,
+        validity_field_to: bool = None,
 ) -> dict:
     """
     Reading all of active engagements with the persons uuid(s) engagement start date.
 
     args:
-    Settings for GrapQLClient params to execute the graphQL query.
+    A GraphQL session to execute the graphQL query.
 
     Optional param of either "validity_field_from" or "validity_field_to" to
     specify what engagement validity to retrieve data of.
@@ -127,19 +123,6 @@ def established_person_engagements(
         graphql_query = gql(gql_query_validity_field(validity_to=True))
 
     variables = {"engagement_date_to_query_from": date.today().isoformat()}
-    # with GraphQLClient(
-    #     url=f"{settings.mora_base}/graphql/v3",
-    #     client_id=settings.client_id,
-    #     client_secret=settings.client_secret,
-    #     auth_realm=settings.auth_realm,
-    #     auth_server=settings.auth_server,
-    #     sync=True,
-    #     httpx_client_kwargs={"timeout": None},
-    # ) as session:
-    #     response = session.execute(
-    #         graphql_query, variable_values=jsonable_encoder(variables)
-    #     )
-
     response = gql_session.execute(graphql_query, variable_values=jsonable_encoder(variables))
 
     return response
@@ -158,10 +141,10 @@ def get_filtered_engagements_for_started_today(gql_query_response: dict) -> List
 
     def filter_today(obj):
         return (
-            datetime.fromisoformat(one(obj["objects"])["validity"]["from"]).replace(
-                tzinfo=None
-            )
-            == utils.today()
+                datetime.fromisoformat(one(obj["objects"])["validity"]["from"]).replace(
+                    tzinfo=None
+                )
+                == utils.today()
         )
 
     filtered_dates = filter(
@@ -192,10 +175,10 @@ def get_filtered_engagements_for_ended_today(gql_query_response: dict) -> List[U
 
     def filter_to_today(obj):
         return (
-            datetime.fromisoformat(one(obj["objects"])["validity"]["to"]).replace(
-                tzinfo=None
-            )
-            == utils.today()
+                datetime.fromisoformat(one(obj["objects"])["validity"]["to"]).replace(
+                    tzinfo=None
+                )
+                == utils.today()
         )
 
     filtered_dates = filter(
@@ -218,7 +201,7 @@ def retrieve_address_types_uuids(gql_session: SyncClientSession) -> dict:
     Reading all types of addresses.
 
     args:
-    Settings for GrapQLClient params to execute the graphQL query.
+    A GraphQL session to execute the graphQL query.
 
     returns:
     An object containing uuid and scope on all active addresses.
@@ -236,16 +219,6 @@ def retrieve_address_types_uuids(gql_session: SyncClientSession) -> dict:
            }
         """
     )
-    # with GraphQLClient(
-    #     url=f"{settings.mora_base}/graphql/v3",
-    #     client_id=settings.client_id,
-    #     client_secret=settings.client_secret,
-    #     auth_realm=settings.auth_realm,
-    #     auth_server=settings.auth_server,
-    #     sync=True,
-    #     httpx_client_kwargs={"timeout": None},
-    # ) as session:
-    #     response = session.execute(graphql_query)
 
     response = gql_session.execute(graphql_query)
 
@@ -264,7 +237,7 @@ def get_email_address_type_uuid_from_gql(gql_query_dict: dict) -> list:
     """
     filtered_email_address_uuids = filter(
         lambda address_type: one(address_type["objects"])["address_type"]["scope"]
-        == "EMAIL",
+                             == "EMAIL",
         gql_query_dict["addresses"],
     )
     extracted_email_uuids = [
@@ -276,18 +249,19 @@ def get_email_address_type_uuid_from_gql(gql_query_dict: dict) -> list:
 
 
 def persons_details_from_engagement(
-    gql_session: SyncClientSession,
-    uuidlist: List[UUID],
-    address_type_uuid_list: List[UUID],
-    started_engagement_details: bool = False,
-    ended_engagement_details: bool = False,
+        gql_session: SyncClientSession,
+        uuidlist: List[UUID],
+        address_type_uuid_list: List[UUID],
+        started_engagement_details: bool = False,
+        ended_engagement_details: bool = False,
 ) -> dict:
     """
     Retrieving all desired details on the person from the filtered engagements.
 
     args:
-    Settings for GrapQLClient params to execute the graphQL query. List of person uuids
-    to query on. List of address type uuids to query on.
+    A GraphQL session to execute the graphQL query.
+    List of person uuids to query on.
+    List of address type uuids to query on.
 
     Optional param of either "started_engagement_details" or "ended_engagement_details" to
     specify what type of engagement to retrieve details of.
@@ -300,28 +274,17 @@ def persons_details_from_engagement(
             gql_query_persons_details_to_display(started_engagement=True)
         )
 
-    if ended_engagement_details:
+    elif ended_engagement_details:
         graphql_query = gql(gql_query_persons_details_to_display(ended_engagement=True))
 
     variables = {"uuidlist": uuidlist, "email_uuid_list": address_type_uuid_list}
-    # with GraphQLClient(
-    #     url=f"{settings.mora_base}/graphql/v3",
-    #     client_id=settings.client_id,
-    #     client_secret=settings.client_secret,
-    #     auth_realm=settings.auth_realm,
-    #     auth_server=settings.auth_server,
-    #     sync=True,
-    #     httpx_client_kwargs={"timeout": None},
-    # ) as session:
-    #     response = session.execute(
-    #         graphql_query, variable_values=jsonable_encoder(variables)
-    #     )
     response = gql_session.execute(graphql_query, variable_values=jsonable_encoder(variables))
+
     return response
 
 
 def convert_person_and_engagement_data_to_csv(
-    dict_data, started: bool = False, ended: bool = False
+        dict_data, started: bool = False, ended: bool = False
 ):
     """
     Mapping fields of payload from engagement to CSV format.
@@ -352,7 +315,7 @@ def convert_person_and_engagement_data_to_csv(
                     }
                 )
 
-    if ended:
+    elif ended:
         for employee in dict_data["employees"]:
             for obj in employee["objects"]:
                 out.append(
