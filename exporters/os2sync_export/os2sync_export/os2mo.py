@@ -309,9 +309,9 @@ def get_sts_user_raw(
         # return immediately because users with no engagements are not synced.
         return sts_user
     addresses = os2mo_get("{BASE}/e/" + uuid + "/details/address").json()
-    if engagement_uuid:
+    if engagement_uuid is not None:
         addresses = filter(
-            lambda a: a.get("engagement_uuid") == engagement_uuid, addresses
+            lambda a: a["engagement_uuid"] == engagement_uuid, addresses
         )
     addresses_to_user(
         sts_user,
