@@ -308,10 +308,14 @@ def get_sts_user_raw(
     if not sts_user["Positions"]:
         # return immediately because users with no engagements are not synced.
         return sts_user
-
+    addresses = os2mo_get("{BASE}/e/" + uuid + "/details/address").json()
+    if engagement_uuid:
+        addresses = filter(
+            lambda a: a.get("engagement_uuid") == engagement_uuid, addresses
+        )
     addresses_to_user(
         sts_user,
-        os2mo_get("{BASE}/e/" + uuid + "/details/address").json(),
+        addresses=addresses,
         phone_scope_classes=settings.os2sync_phone_scope_classes,
         email_scope_classes=settings.os2sync_email_scope_classes,
     )
