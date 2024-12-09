@@ -138,7 +138,7 @@ class GQLLoraCache:
 
     def _setup_gql_client(self) -> GraphQLClient:
         return GraphQLClient(
-            url=f"{self.settings.mora_base}/graphql/v3",
+            url=f"{self.settings.mora_base}/graphql/v22",
             client_id=self.settings.client_id,
             client_secret=self.settings.client_secret,
             auth_realm=self.settings.auth_realm,
@@ -158,24 +158,39 @@ class GQLLoraCache:
         """Builds graphql queries and returns the gql object and variable values dict."""
         if variable_values is None:
             variable_values = {}
+
+        query_filters = []
+        filter_content = {}
+        query_variables = []
+
         if uuid:
-            query_filters = ["$uuids: [UUID!]"]
-            query_variables = ["uuids: $uuids"]
+            query_filters.append("$uuids: [UUID!]")
+            filter_content["uuids"] = "$uuids"
             variable_values.update({"uuids": [str(uuid)]})
         else:
-            query_filters = ["$limit: int", "$offset: int"]
-            query_variables = ["limit: $limit", "offset: $offset"]
+            query_filters.extend(["$limit: int", "$cursor: Cursor"])
+            query_variables.extend(["limit: $limit", "cursor: $cursor"])
 
-        query_types_with_no_dates = ["facets", "classes", "itsystems"]
-        obj_type = "objects" if self.full_history else "current"
+        obj_type = "validities" if self.full_history else "current"
 
-        if self.full_history and query_type not in query_types_with_no_dates:
-            query_filters.extend(["$to_date: DateTime", "$from_date: DateTime"])
-            query_variables.extend(["from_date: $from_date", "to_date: $to_date"])
+        if self.full_history:
+            query_filters.extend(["$from_date: DateTime", "$to_date: DateTime"])
+            filter_content["from_date"] = "$from_date"
+            filter_content["to_date"] = "$to_date"
             variable_values.update({"from_date": None, "to_date": None})
 
         if self.skip_past:
+            filter_content["from_date"] = "$from_date"
             variable_values.update({"from_date": str(datetime.date.today())})
+
+        filter_string = (
+            f"filter: {{ {', '.join([f'{key}: {value}' for key, value in filter_content.items()])} }}"
+            if filter_content
+            else ""
+        )
+
+        if filter_string:
+            query_variables.append(filter_string)
 
         query_filters_string = ", ".join(query_filters)
         query_variables_string = ", ".join(query_variables)
@@ -183,20 +198,21 @@ class GQLLoraCache:
         # account for simple_query differences
         query_contents = (
             f"""uuid
-                    obj: {obj_type} {{
-                        {query_fields}
-                    }}"""
+                        obj: {obj_type} {{
+                            {query_fields}
+                        }}"""
             if not simple_query
             else f"{query_fields}"
         )
 
         full_query = f"""
             query ({query_filters_string}) {{
-                page: {query_type}({query_variables_string}){{
-                    {query_contents}
+                page: {query_type}({query_variables_string}) {{
+                    objects {{
+                        {query_contents}
+                    }}
                 }}
             }}
-
             """
         return full_query, variable_values
 
@@ -257,7 +273,7 @@ class GQLLoraCache:
             """
         )
         with GraphQLClient(
-            url=f"{self.settings.mora_base}/graphql/v3",
+            url=f"{self.settings.mora_base}/graphql/v22",
             client_id=self.settings.client_id,
             client_secret=self.settings.client_secret,
             auth_realm=self.settings.auth_realm,
