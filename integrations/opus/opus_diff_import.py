@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import sys
 from datetime import datetime
@@ -224,7 +225,7 @@ class OpusDiffImport(object):
         return MoraHelper(hostname=self.settings["mora.base"], use_cache=False)
 
     def find_address(self, address_string, zip_code) -> str | None:
-        return dawa_helper.dawa_lookup(address_string, zip_code)
+        return asyncio.run(dawa_helper.dawa_lookup(address_string, zip_code))
 
     # This exact function also exists in sd_changed_at
     def _assert(self, response):

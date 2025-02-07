@@ -407,8 +407,9 @@ class TestCondenseEmployeeOpusAddresses(_GetInstanceMixin):
         expected_result: dict,
     ) -> None:
         instance = self.get_instance(settings)
-        with patch(
-            "integrations.opus.opus_diff_import.dawa_helper.dawa_lookup",
+        with patch.object(
+            instance,
+            "find_address",
             return_value=dar_response,
         ):
             actual_result = instance._condense_employee_opus_addresses(opus_employee)
@@ -467,8 +468,9 @@ class TestUpdateEmployeeAddress(_GetInstanceMixin):
         with patch.object(instance, "ensure_class_in_facet") as ensure_class:
             # Make sure "DAR" returns a "DAR UUID" so we trigger an update of the
             # "Adresse" address type (a postal address.)
-            with patch(
-                "integrations.opus.opus_diff_import.dawa_helper.dawa_lookup",
+            with patch.object(
+                instance,
+                "find_address",
                 return_value="dar-address-uuid",
             ):
                 with patch.object(instance, "_perform_address_update"):
