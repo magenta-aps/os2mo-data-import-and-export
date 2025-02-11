@@ -1,3 +1,4 @@
+import asyncio
 from typing import Dict
 from typing import Optional
 
@@ -44,7 +45,7 @@ def prepare_re_import(
         )
 
 
-def import_opus(
+async def import_opus(
     ad_reader=None,
     import_all: bool = False,
     import_last=False,
@@ -68,7 +69,7 @@ def import_opus(
     all_export_dates = prepend(None, export_dates)
     date_pairs = pairwise(all_export_dates)
     for date1, date2 in date_pairs:
-        import_one(
+        await import_one(
             ad_reader,
             date2,
             date1,
@@ -143,8 +144,13 @@ def clear_and_reload(
     if use_ad:
         AD = ad_reader.ADParameterReader()
         AD.cache_all(print_progress=True)
-    import_opus(
-        ad_reader=AD, import_all=import_all, import_last=import_last, dry_run=dry_run
+    asyncio.run(
+        import_opus(
+            ad_reader=AD,
+            import_all=import_all,
+            import_last=import_last,
+            dry_run=dry_run,
+        )
     )
 
 

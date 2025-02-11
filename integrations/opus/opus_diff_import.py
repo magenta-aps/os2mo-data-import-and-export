@@ -226,10 +226,10 @@ class OpusDiffImport(object):
     def _get_mora_helper(self, hostname="localhost:5000", use_cache=False):
         return MoraHelper(hostname=self.settings["mora.base"], use_cache=False)
 
-    def find_address(self, address_string: str, zip_code: str) -> str | None:
+    async def find_address(self, address_string: str, zip_code: str) -> str | None:
         address = (address_string, zip_code)
         if address not in self.dar_cache:
-            dar_uuid = asyncio.run(dawa_helper.dawa_lookup(*address))
+            dar_uuid = await dawa_helper.dawa_lookup(*address)
             self.dar_cache[address] = dar_uuid
         return self.dar_cache[address]
 
@@ -305,7 +305,7 @@ class OpusDiffImport(object):
             }
         return address_dict
 
-    def _condense_employee_opus_addresses(self, employee):
+    async def _condense_employee_opus_addresses(self, employee):
         opus_addresses = {}
         if "email" in employee and not self.settings.get(
             "integrations.opus.skip_employee_email", False
@@ -330,7 +330,7 @@ class OpusDiffImport(object):
             else:
                 address_string = employee["address"]
                 zip_code = employee["postalCode"]
-                address_uuid = self.find_address(address_string, zip_code)
+                address_uuid = await self.find_address(address_string, zip_code)
                 if address_uuid:
                     opus_addresses["dar"] = address_uuid
                 else:
@@ -354,8 +354,8 @@ class OpusDiffImport(object):
             response = self.helper._mo_post("details/edit", payload)
             response.raise_for_status()
 
-    def _update_employee_address(self, mo_uuid, employee):
-        opus_addresses = self._condense_employee_opus_addresses(employee)
+    async def _update_employee_address(self, mo_uuid, employee):
+        opus_addresses = await self._condense_employee_opus_addresses(employee)
         mo_addresses = self._condense_employee_mo_addresses(mo_uuid)
         logger.info("Addresses to be synced to MO: {}".format(opus_addresses))
 
@@ -388,7 +388,7 @@ class OpusDiffImport(object):
                 address_args["visibility"] = {"uuid": str(visibility)}
             self._perform_address_update(address_args, current)
 
-    def _update_unit_addresses(self, unit):
+    async def _update_unit_addresses(self, unit):
         calculated_uuid = opus_helpers.generate_uuid(unit["@id"])
         unit_addresses = self.helper.read_ou_address(
             calculated_uuid, scope=None, return_all=True
@@ -407,7 +407,7 @@ class OpusDiffImport(object):
             }
 
         if unit.get("street") and unit.get("zipCode"):
-            address_uuid = self.find_address(unit["street"], unit["zipCode"])
+            address_uuid = await self.find_address(unit["street"], unit["zipCode"])
             if address_uuid:
                 logger.debug("Found DAR uuid: {}".format(address_uuid))
                 unit["dar"] = address_uuid
@@ -436,7 +436,7 @@ class OpusDiffImport(object):
             }
             self._perform_address_update(args, current)
 
-    def update_unit(self, unit):
+    async def update_unit(self, unit):
         calculated_uuid = opus_helpers.generate_uuid(unit["@id"])
         parent_name = unit["parentOrgUnit"]
         parent_uuid = (
@@ -481,7 +481,7 @@ class OpusDiffImport(object):
             logger.info("Created unit {}".format(unit["@id"]))
             logger.debug("Response: {}".format(response.text))
 
-        self._update_unit_addresses(unit)
+        await self._update_unit_addresses(unit)
 
     def _job_and_engagement_type(self, employee):
         job = employee["position"]
@@ -766,7 +766,7 @@ class OpusDiffImport(object):
                 response = self.helper._mo_post("details/create", payload)
                 assert response.status_code == 201
 
-    def update_employee(self, employee):
+    async def update_employee(self, employee):
         cpr = opus_helpers.read_cpr(employee)
         logger.info("----")
         logger.info("Now updating {}".format(employee.get("@id")))
@@ -812,7 +812,7 @@ class OpusDiffImport(object):
                 sam_account, constants.AD_it_system, employee, employee_mo_uuid
             )
 
-        self._update_employee_address(employee_mo_uuid, employee)
+        await self._update_employee_address(employee_mo_uuid, employee)
 
         # Now we have a MO uuid, update engagement:
         mo_engagements = self.helper.read_user_engagement(
@@ -914,17 +914,19 @@ class OpusDiffImport(object):
         )  # Just a check that it actually worked as intended
         logger.debug("Cancelled engagement deleted")
 
-    def start_import(self, units, employees, terminated_employees, cancelled_employees):
+    async def start_import(
+        self, units, employees, terminated_employees, cancelled_employees
+    ):
         """
         Start an opus import, run the oldest available dump that
         has not already been imported.
         """
 
         for unit in tqdm(units, desc="Update units"):
-            self.update_unit(unit)
+            await self.update_unit(unit)
 
         for employee in tqdm(employees, desc="Update employees"):
-            self.update_employee(employee)
+            await self.update_employee(employee)
 
         for employee in tqdm(terminated_employees, desc="Terminating employees"):
             # This is a terminated employee, check if engagement is active
@@ -947,7 +949,7 @@ class OpusDiffImport(object):
         logger.info("Program ended correctly")
 
 
-def import_one(
+async def import_one(
     ad_reader,
     xml_date: datetime,
     latest_date: Optional[datetime],
@@ -984,7 +986,7 @@ def import_one(
         filter_ids=filter_ids,
         dry_run=dry_run,
     )
-    diff.start_import(units, employees, terminated_employees, cancelled_employees)
+    await diff.start_import(units, employees, terminated_employees, cancelled_employees)
     filtered_units = diff.find_unterminated_filtered_units(filtered_units)
 
     diff.handle_filtered_units(filtered_units)
@@ -993,7 +995,7 @@ def import_one(
     print()
 
 
-def start_opus_diff(ad_reader=None, dry_run: bool = False):
+async def start_opus_diff(ad_reader=None, dry_run: bool = False):
     """
     Start an opus update, use the oldest available dump that has not
     already been imported.
@@ -1010,7 +1012,7 @@ def start_opus_diff(ad_reader=None, dry_run: bool = False):
     xml_date, latest_date = opus_helpers.next_xml_file(run_db, dumps)
 
     while xml_date:
-        import_one(
+        await import_one(
             ad_reader,
             xml_date,  # type: ignore
             latest_date,  # type: ignore
@@ -1030,6 +1032,6 @@ if __name__ == "__main__":
     reader = ad_reader.ADParameterReader() if settings.get("integrations.ad") else None
 
     try:
-        start_opus_diff(ad_reader=reader)
+        asyncio.run(start_opus_diff(ad_reader=reader))
     except RunDBInitException:
         print("RunDB not initialized")

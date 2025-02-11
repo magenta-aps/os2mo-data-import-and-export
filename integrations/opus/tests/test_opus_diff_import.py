@@ -8,6 +8,7 @@ from unittest.mock import call
 from unittest.mock import patch
 from uuid import uuid4
 
+import pytest
 from parameterized import parameterized
 
 from integrations.opus import opus_helpers
@@ -144,11 +145,12 @@ class Opus_diff_import_tester(unittest.TestCase):
             self.expected_employee_count,
         )
 
-    def test_import_count(self):
+    @pytest.mark.asyncio
+    async def test_import_count(self):
         diff = OpusDiffImportTest_counts(
             XML_DATE, ad_reader=None, employee_mapping="test"
         )
-        diff.start_import(
+        await diff.start_import(
             self.units,
             self.employees,
             self.terminated_employees,
@@ -162,11 +164,12 @@ class Opus_diff_import_tester(unittest.TestCase):
             diff.delete_engagement.call_count, len(self.cancelled_employees)
         )
 
-    def test_update_unit(self):
+    @pytest.mark.asyncio
+    async def test_update_unit(self):
         diff = OpusDiffImportTestbase(XML_DATE, ad_reader=None, employee_mapping="test")
         diff.ensure_class_in_facet = MagicMock(return_value="dummy-class-uuid")
         for unit in self.units:
-            diff.update_unit(unit)
+            await diff.update_unit(unit)
             calculated_uuid = opus_helpers.generate_uuid(unit["@id"])
             if unit.get("street"):
                 diff.helper._mo_post.assert_called_with(
@@ -399,7 +402,8 @@ class TestCondenseEmployeeOpusAddresses(_GetInstanceMixin):
             ),
         ]
     )
-    def test_feature_flags_are_respected(
+    @pytest.mark.asyncio
+    async def test_feature_flags_are_respected(
         self,
         settings: dict,
         opus_employee: dict,
@@ -412,7 +416,9 @@ class TestCondenseEmployeeOpusAddresses(_GetInstanceMixin):
             "find_address",
             return_value=dar_response,
         ):
-            actual_result = instance._condense_employee_opus_addresses(opus_employee)
+            actual_result = await instance._condense_employee_opus_addresses(
+                opus_employee
+            )
             assert actual_result == expected_result
 
     def test_skip_user_if_no_position(
@@ -461,7 +467,8 @@ class TestUpdateEmployeeAddress(_GetInstanceMixin):
         "scope": "INTERNAL",
     }
 
-    def test_dar_address_visibility(self):
+    @pytest.mark.asyncio
+    async def test_dar_address_visibility(self):
         """Verify that we use the correct visibility class when creating or updating
         employee addresses of the type 'Adresse' (= postal addresses.)"""
         instance = self.get_instance({})
@@ -474,7 +481,9 @@ class TestUpdateEmployeeAddress(_GetInstanceMixin):
                 return_value="dar-address-uuid",
             ):
                 with patch.object(instance, "_perform_address_update"):
-                    instance._update_employee_address("mo_uuid", self.opus_employee)
+                    await instance._update_employee_address(
+                        "mo_uuid", self.opus_employee
+                    )
                     assert (
                         ensure_class.call_args.kwargs
                         == self.expected_address_visibility
