@@ -151,6 +151,8 @@ class MOPostDryRun:
 
 
 class OpusDiffImport(object):
+    dar_cache: dict[str, UUID | None] = {}
+
     def __init__(
         self,
         xml_date,
@@ -224,8 +226,12 @@ class OpusDiffImport(object):
     def _get_mora_helper(self, hostname="localhost:5000", use_cache=False):
         return MoraHelper(hostname=self.settings["mora.base"], use_cache=False)
 
-    def find_address(self, address_string, zip_code) -> str | None:
-        return asyncio.run(dawa_helper.dawa_lookup(address_string, zip_code))
+    def find_address(self, address_string: str, zip_code: str) -> str | None:
+        address = (address_string, zip_code)
+        if address not in self.dar_cache:
+            dar_uuid = asyncio.run(dawa_helper.dawa_lookup(*address))
+            self.dar_cache[address] = dar_uuid
+        return self.dar_cache[address]
 
     # This exact function also exists in sd_changed_at
     def _assert(self, response):
