@@ -206,9 +206,10 @@ class OpusDiffImport(object):
 
     def ensure_class_in_facet(self, *args, **kwargs):
         """Helper function to call ensure_class_in_facet from morahelpers with owner"""
-        return self.helper.ensure_class_in_facet(
-            *args, owner=opus_helpers.find_opus_root_unit_uuid(), **kwargs
+        root_uuid = opus_helpers.generate_uuid(
+            opus_helpers.find_opus_root_unit_id(), self.settings["municipality.name"]
         )
+        return self.helper.ensure_class_in_facet(*args, owner=root_uuid, **kwargs)
 
     def _find_classes(self, facet):
         class_types = self.helper.read_classes_in_facet(facet)
@@ -384,7 +385,9 @@ class OpusDiffImport(object):
             self._perform_address_update(address_args, current)
 
     async def _update_unit_addresses(self, unit):
-        calculated_uuid = opus_helpers.generate_uuid(unit["@id"])
+        calculated_uuid = opus_helpers.generate_uuid(
+            unit["@id"], self.settings["municipality.name"]
+        )
         unit_addresses = self.helper.read_ou_address(
             calculated_uuid, scope=None, return_all=True
         )
@@ -432,10 +435,12 @@ class OpusDiffImport(object):
             self._perform_address_update(args, current)
 
     async def update_unit(self, unit):
-        calculated_uuid = opus_helpers.generate_uuid(unit["@id"])
+        calculated_uuid = opus_helpers.generate_uuid(
+            unit["@id"], self.settings["municipality.name"]
+        )
         parent_name = unit["parentOrgUnit"]
         parent_uuid = (
-            opus_helpers.generate_uuid(parent_name)
+            opus_helpers.generate_uuid(parent_name, self.settings["municipality.name"])
             if parent_name
             else self.helper.read_organisation()
         )
@@ -499,7 +504,9 @@ class OpusDiffImport(object):
         :return: True if update happended, False if not.
         """
         job_function, eng_type = self._job_and_engagement_type(opus_employee)
-        unit_uuid = opus_helpers.generate_uuid(opus_employee["orgUnit"])
+        unit_uuid = opus_helpers.generate_uuid(
+            opus_employee["orgUnit"], self.settings["municipality.name"]
+        )
 
         mo_start_date = datetime.fromisoformat(mo_engagement["validity"]["from"])
         opus_start_date = datetime.fromisoformat(opus_employee["entryDate"])
@@ -570,7 +577,9 @@ class OpusDiffImport(object):
 
     def create_engagement(self, mo_user_uuid, opus_employee):
         job_function, eng_type = self._job_and_engagement_type(opus_employee)
-        unit_uuid = opus_helpers.generate_uuid(opus_employee["orgUnit"])
+        unit_uuid = opus_helpers.generate_uuid(
+            opus_employee["orgUnit"], self.settings["municipality.name"]
+        )
 
         engagement_unit = self.helper.read_ou(unit_uuid)
         if "error" in engagement_unit:
@@ -701,7 +710,11 @@ class OpusDiffImport(object):
             )
 
             args = {
-                "unit": str(opus_helpers.generate_uuid(employee["orgUnit"])),
+                "unit": str(
+                    opus_helpers.generate_uuid(
+                        employee["orgUnit"], self.settings["municipality.name"]
+                    )
+                ),
                 "person": employee_mo_uuid,
                 "manager_type": str(manager_type_uuid),
                 "level": str(manager_level_uuid),
@@ -856,6 +869,12 @@ class OpusDiffImport(object):
         logger.debug("Terminate response: {}".format(response.text))
         self._assert(response)
 
+    def gen_unit_uuid(self, unit):
+        """generate uuids for given units."""
+        return str(
+            opus_helpers.generate_uuid(unit["@id"], self.settings["municipality.name"])
+        )
+
     def find_unterminated_filtered_units(self, units):
         """Check if units are in MO."""
 
@@ -865,9 +884,7 @@ class OpusDiffImport(object):
         )
         current_uuids = set(map(itemgetter("uuid"), mo_units))
         # return the units that are active in os2mo, but should be terminated
-        mo_units = filter(
-            lambda unit: opus_helpers.gen_unit_uuid(unit) in current_uuids, units
-        )
+        mo_units = filter(lambda unit: self.gen_unit_uuid(unit) in current_uuids, units)
         return mo_units
 
     def handle_filtered_units(self, units, dry_run=False):
@@ -876,7 +893,7 @@ class OpusDiffImport(object):
         If a unit is filtered from the Opus file it means it cannot be deleted in Opus, but should not appear in MO.
         Any units that exists in MO, but are later moved in Opus to be below one of the filtered units should be terminated in MO.
         """
-        unfiltered_units = {opus_helpers.gen_unit_uuid(unit) for unit in units}
+        unfiltered_units = {self.gen_unit_uuid(unit) for unit in units}
         if dry_run:
             print(
                 f"There are {len(unfiltered_units)} units that should have been terminated."
@@ -972,7 +989,7 @@ async def import_one(
         latest_path, xml_path, filter_ids, opus_id=opus_id
     )
     if rundb_write and not dry_run:
-        opus_helpers.local_db_insert((xml_date, "Running diff update since {}"))
+        opus_helpers.local_db_insert(run_db, (xml_date, "Running diff update since {}"))
 
     diff = OpusDiffImport(
         xml_date,

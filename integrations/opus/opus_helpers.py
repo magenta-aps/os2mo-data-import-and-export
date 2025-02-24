@@ -5,6 +5,7 @@ import sqlite3
 import uuid
 from functools import lru_cache
 from operator import itemgetter
+from pathlib import Path
 from typing import Dict
 from typing import Iterable
 from typing import List
@@ -13,7 +14,6 @@ from typing import Tuple
 
 import xmltodict
 from deepdiff import DeepDiff
-from fastramqpi.ra_utils.load_settings import load_settings
 from fastramqpi.ra_utils.tqdm_wrapper import tqdm
 from more_itertools import first
 from more_itertools import partition
@@ -21,7 +21,6 @@ from more_itertools import partition
 from integrations.opus.opus_exceptions import ImporterrunNotCompleted
 from integrations.opus.opus_file_reader import get_opus_filereader
 
-SETTINGS = load_settings()
 START_DATE = datetime.datetime(2019, 1, 1, 0, 0)
 
 logger = logging.getLogger("opusHelper")
@@ -39,9 +38,9 @@ def get_latest_dump():
     return latest_date, dumps[latest_date]
 
 
-def local_db_insert(insert_tuple):
+def local_db_insert(run_db: Path, insert_tuple):
     conn = sqlite3.connect(
-        SETTINGS["integrations.opus.import.run_db"],
+        run_db,
         detect_types=sqlite3.PARSE_DECLTYPES,
     )
     c = conn.cursor()
@@ -68,7 +67,7 @@ def initialize_db(run_db):
 
 def next_xml_file(run_db, dumps) -> Tuple[Optional[datetime.date], datetime.date]:
     conn = sqlite3.connect(
-        SETTINGS["integrations.opus.import.run_db"],
+        run_db,
         detect_types=sqlite3.PARSE_DECLTYPES,
     )
     c = conn.cursor()
@@ -105,11 +104,11 @@ def parse_phone(phone_number):
 
 
 @lru_cache(maxsize=None)
-def generate_uuid(value):
+def generate_uuid(value, municipality_name: str):
     """
     Generate a predictable uuid based on org name and a unique value.
     """
-    base_hash = hashlib.md5(SETTINGS["municipality.name"].encode())
+    base_hash = hashlib.md5(municipality_name.encode())
     base_digest = base_hash.hexdigest()
     base_uuid = uuid.UUID(base_digest)
 
@@ -118,11 +117,6 @@ def generate_uuid(value):
     value_digest = value_hash.hexdigest()
     value_uuid = uuid.UUID(value_digest)
     return value_uuid
-
-
-def gen_unit_uuid(unit):
-    """generate uuids for given units."""
-    return str(generate_uuid(unit["@id"]))
 
 
 def parser(target_file: str, opus_id: Optional[int] = None) -> Tuple[List, List]:
@@ -402,8 +396,8 @@ def read_and_transform_data(
 
 
 @lru_cache
-def find_opus_root_unit_uuid() -> uuid.UUID:
-    """Generates uuid for opus root.
+def find_opus_root_unit_id() -> str:
+    """Finds the opus id for the root opus unit.
 
     Reads the first available opus file and generates the uuid for the first unit in the file.
     Assumes this is the root organisation of opus.
@@ -413,5 +407,4 @@ def find_opus_root_unit_uuid() -> uuid.UUID:
     first_date = min(sorted(dumps.keys()))
     units, _ = parser(dumps[first_date])
     main_unit = first(units)
-    calculated_uuid = generate_uuid(main_unit["@id"])
-    return calculated_uuid
+    return main_unit["@id"]

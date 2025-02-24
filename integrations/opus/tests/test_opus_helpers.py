@@ -14,10 +14,10 @@ testfile2 = Path.cwd() / "integrations/opus/tests/ZLPE20200102_delta.xml"
 
 
 class test_opus_helpers(TestCase):
-    @given(text())
-    def test_generate_uuid(self, value):
-        uuid1 = opus_helpers.generate_uuid(value)
-        uuid2 = opus_helpers.generate_uuid(value)
+    @given(text(), text())
+    def test_generate_uuid(self, value, municipality_name):
+        uuid1 = opus_helpers.generate_uuid(value, municipality_name)
+        uuid2 = opus_helpers.generate_uuid(value, municipality_name)
         self.assertEqual(uuid1, uuid2)
 
     @parameterized.expand(

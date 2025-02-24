@@ -6,6 +6,7 @@ from typing import Optional
 from unittest.mock import MagicMock
 from unittest.mock import call
 from unittest.mock import patch
+from uuid import UUID
 from uuid import uuid4
 
 import pytest
@@ -24,7 +25,7 @@ XML_DATE = datetime.fromisoformat("2020-01-01")
 DAR_UUID = uuid4()
 DUMMY_SETTINGS = {
     "mora.base": "http://example.com",
-    "municipality_name": "Testerup Kommune",
+    "municipality.name": "Testerup Kommune",
 }
 
 
@@ -172,7 +173,9 @@ class Opus_diff_import_tester(unittest.TestCase):
         diff.ensure_class_in_facet = MagicMock(return_value="dummy-class-uuid")
         for unit in self.units:
             await diff.update_unit(unit)
-            calculated_uuid = opus_helpers.generate_uuid(unit["@id"])
+            calculated_uuid = opus_helpers.generate_uuid(
+                unit["@id"], diff.settings["municipality.name"]
+            )
             if unit.get("street"):
                 diff.helper._mo_post.assert_called_with(
                     "details/create",
@@ -291,18 +294,15 @@ class Opus_diff_import_tester(unittest.TestCase):
                 "IT system found for person_uuid='personuuid'"
             ]
 
-    @patch("integrations.opus.opus_helpers.find_opus_root_unit_uuid")
-    def test_ensure_class_in_facet(self, root_uuid_mock):
+    def test_ensure_class_in_facet(self):
         """Tests that calling ensure_class_in_facet calls morahelpers with the correct owner added"""
-        root_uuid = uuid4()
-        root_uuid_mock.return_value = root_uuid
         diff = OpusDiffImportTestbase(
             "2022-07-13", ad_reader=None, settings=DUMMY_SETTINGS
         )
 
         diff.ensure_class_in_facet("Facetname", "classbvn")
         diff.helper.ensure_class_in_facet.assert_called_once_with(
-            "Facetname", "classbvn", owner=root_uuid
+            "Facetname", "classbvn", owner=UUID("4d4128ce-efb7-74bc-9a3f-9422d5ceeca1")
         )
 
 
@@ -501,7 +501,11 @@ class TestUpdateEmployeeManagerFunctions(_GetInstanceMixin):
         "position": "stillingsbetegnelse",
         "orgUnit": unit_name,
     }
-    unit_uuid = str(opus_helpers.generate_uuid(opus_employee["orgUnit"]))
+    unit_uuid = str(
+        opus_helpers.generate_uuid(
+            opus_employee["orgUnit"], DUMMY_SETTINGS["municipality.name"]
+        )
+    )
     manager_level = str(uuid4())
     manager_type = str(uuid4())
     manager_responsibility = str(uuid4())
@@ -673,7 +677,11 @@ class TestUpdateEmployeeManagerFunctions(_GetInstanceMixin):
         start_date = "2000-01-01"
         self.opus_employee["entryDate"] = start_date
 
-        unit_uuid = str(opus_helpers.generate_uuid(self.opus_employee["orgUnit"]))
+        unit_uuid = str(
+            opus_helpers.generate_uuid(
+                self.opus_employee["orgUnit"], instance.settings["municipality.name"]
+            )
+        )
         mo_engagement = {
             "uuid": "engagement_uuid",
             "validity": {"from": start_date, "to": None},
@@ -703,7 +711,11 @@ class TestUpdateEmployeeManagerFunctions(_GetInstanceMixin):
         instance.helper._mo_post.return_value.status_code = 200
 
         validity = instance.validity(employee=self.opus_employee, edit=True)
-        unit_uuid = str(opus_helpers.generate_uuid(self.opus_employee["orgUnit"]))
+        unit_uuid = str(
+            opus_helpers.generate_uuid(
+                self.opus_employee["orgUnit"], instance.settings["municipality.name"]
+            )
+        )
         mo_engagement = {
             "uuid": "engagement_uuid",
             "validity": {"from": str(datetime.now().date()), "to": None},
@@ -747,7 +759,11 @@ class TestUpdateEmployeeManagerFunctions(_GetInstanceMixin):
         instance.helper._mo_post.return_value.status_code = 200
 
         validity = instance.validity(employee=self.opus_employee, edit=True)
-        unit_uuid = str(opus_helpers.generate_uuid(self.opus_employee["orgUnit"]))
+        unit_uuid = str(
+            opus_helpers.generate_uuid(
+                self.opus_employee["orgUnit"], instance.settings["municipality.name"]
+            )
+        )
         mo_engagement = {
             "uuid": "engagement_uuid",
             "validity": {"from": old_start_date, "to": None},
