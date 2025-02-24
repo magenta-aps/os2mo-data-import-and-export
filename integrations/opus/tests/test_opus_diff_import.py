@@ -22,16 +22,20 @@ from integrations.opus.opus_diff_import import OpusDiffImport
 
 XML_DATE = datetime.fromisoformat("2020-01-01")
 DAR_UUID = uuid4()
+DUMMY_SETTINGS = {
+    "mora.base": "http://example.com",
+    "municipality_name": "Testerup Kommune",
+}
 
 
 class OpusDiffImportTestbase(OpusDiffImport):
-    def __init__(self, latest_date, *args, **kwargs):
+    def __init__(self, latest_date, settings, *args, **kwargs):
         self.morahelper_mock = MagicMock()
         self.morahelper_mock.read_organisation.return_value = "org_uuid"
         self.morahelper_mock._mo_post.return_value.status_code = 201
         self.morahelper_mock.ensure_class_in_facet.return_code = uuid4()
 
-        super().__init__(latest_date, *args, **kwargs)
+        super().__init__(latest_date, *args, settings=settings, **kwargs)
 
     def _get_mora_helper(self, hostname, use_cache):
         return self.morahelper_mock
@@ -164,7 +168,7 @@ class Opus_diff_import_tester(unittest.TestCase):
 
     @pytest.mark.asyncio
     async def test_update_unit(self):
-        diff = OpusDiffImportTestbase(XML_DATE, ad_reader=None)
+        diff = OpusDiffImportTestbase(XML_DATE, ad_reader=None, settings=DUMMY_SETTINGS)
         diff.ensure_class_in_facet = MagicMock(return_value="dummy-class-uuid")
         for unit in self.units:
             await diff.update_unit(unit)
@@ -183,7 +187,7 @@ class Opus_diff_import_tester(unittest.TestCase):
                 )
 
     def test_perform_address_update_create(self):
-        diff = OpusDiffImportTestbase(XML_DATE, ad_reader=None)
+        diff = OpusDiffImportTestbase(XML_DATE, ad_reader=None, settings=DUMMY_SETTINGS)
         address_type_uuid = str(uuid4())
         value = "address value"
         org_unit_uuid = uuid4()
@@ -228,7 +232,7 @@ class Opus_diff_import_tester(unittest.TestCase):
         new_username,
         change_type,
     ):
-        diff = OpusDiffImportTestbase(XML_DATE, ad_reader=None)
+        diff = OpusDiffImportTestbase(XML_DATE, ad_reader=None, settings=DUMMY_SETTINGS)
         date = XML_DATE.strftime("%Y-%m-%d")
         diff.it_systems = {"Opus": "Opus_uuid"}
         diff.morahelper_mock.get_e_itsystems.return_value = [
@@ -273,7 +277,7 @@ class Opus_diff_import_tester(unittest.TestCase):
     def test_skip_multiple_usernames(
         self,
     ):
-        diff = OpusDiffImportTestbase(XML_DATE, ad_reader=None)
+        diff = OpusDiffImportTestbase(XML_DATE, ad_reader=None, settings=DUMMY_SETTINGS)
         diff.it_systems = {"Opus": "Opus_uuid"}
         diff.morahelper_mock.get_e_itsystems.return_value = [
             {"user_key": "username1", "uuid": "dummyuuid"},
@@ -292,7 +296,9 @@ class Opus_diff_import_tester(unittest.TestCase):
         """Tests that calling ensure_class_in_facet calls morahelpers with the correct owner added"""
         root_uuid = uuid4()
         root_uuid_mock.return_value = root_uuid
-        diff = OpusDiffImportTestbase("2022-07-13", ad_reader=None)
+        diff = OpusDiffImportTestbase(
+            "2022-07-13", ad_reader=None, settings=DUMMY_SETTINGS
+        )
 
         diff.ensure_class_in_facet("Facetname", "classbvn")
         diff.helper.ensure_class_in_facet.assert_called_once_with(
@@ -309,17 +315,14 @@ class _GetInstanceMixin:
     _xml_date = datetime.now()
 
     def get_instance(self, settings: dict, dry_run=False) -> OpusDiffImport:
-        settings.setdefault("mora.base", "http://unused.url")
-        with patch(
-            "integrations.opus.opus_diff_import.load_settings", return_value=settings
-        ):
-            with patch("integrations.opus.opus_diff_import.MoraHelper"):
-                instance = TestableOpus(
-                    xml_date=self._xml_date,
-                    ad_reader=None,
-                    dry_run=dry_run,
-                )
-                return instance
+        with patch("integrations.opus.opus_diff_import.MoraHelper"):
+            instance = TestableOpus(
+                xml_date=self._xml_date,
+                ad_reader=None,
+                settings=settings,
+                dry_run=dry_run,
+            )
+            return instance
 
 
 class TestCondenseEmployeeOpusAddresses(_GetInstanceMixin):
@@ -398,11 +401,13 @@ class TestCondenseEmployeeOpusAddresses(_GetInstanceMixin):
     @pytest.mark.asyncio
     async def test_feature_flags_are_respected(
         self,
-        settings: dict,
+        input_settings: dict,
         opus_employee: dict,
         dar_response: Optional[str],
         expected_result: dict,
     ) -> None:
+        settings = DUMMY_SETTINGS.copy()
+        settings.update(input_settings)
         instance = self.get_instance(settings)
         with patch.object(
             instance,
@@ -418,7 +423,7 @@ class TestCondenseEmployeeOpusAddresses(_GetInstanceMixin):
         self,
     ):
         # Arrange
-        diff = OpusDiffImportTestbase(XML_DATE, ad_reader=None)
+        diff = OpusDiffImportTestbase(XML_DATE, ad_reader=None, settings=DUMMY_SETTINGS)
 
         # Act
         diff.update_employee({"position": None, "cpr": "123456789"})
@@ -431,7 +436,7 @@ class TestCondenseEmployeeOpusAddresses(_GetInstanceMixin):
         self,
     ):
         # Arrange
-        diff = OpusDiffImportTestbase(XML_DATE, ad_reader=None)
+        diff = OpusDiffImportTestbase(XML_DATE, ad_reader=None, settings=DUMMY_SETTINGS)
 
         # Act
         diff.update_employee(
@@ -464,7 +469,7 @@ class TestUpdateEmployeeAddress(_GetInstanceMixin):
     async def test_dar_address_visibility(self):
         """Verify that we use the correct visibility class when creating or updating
         employee addresses of the type 'Adresse' (= postal addresses.)"""
-        instance = self.get_instance({})
+        instance = self.get_instance(DUMMY_SETTINGS)
         with patch.object(instance, "ensure_class_in_facet") as ensure_class:
             # Make sure "DAR" returns a "DAR UUID" so we trigger an update of the
             # "Adresse" address type (a postal address.)
@@ -506,7 +511,7 @@ class TestUpdateEmployeeManagerFunctions(_GetInstanceMixin):
 
     def test_create_manager(self):
         # Arrange
-        instance = self.get_instance({})
+        instance = self.get_instance(settings=DUMMY_SETTINGS)
         instance.helper._mo_lookup = MagicMock(
             return_value=[
                 # This manager function should be disregarded
@@ -551,7 +556,7 @@ class TestUpdateEmployeeManagerFunctions(_GetInstanceMixin):
 
     def test_update_manager(self):
         # Arrange
-        instance = self.get_instance({})
+        instance = self.get_instance(DUMMY_SETTINGS)
         instance.helper._mo_lookup = MagicMock(
             return_value=[
                 {
@@ -609,7 +614,7 @@ class TestUpdateEmployeeManagerFunctions(_GetInstanceMixin):
     def test_terminate_manager(self):
         # Arrange
         self.opus_employee["isManager"] = "false"
-        instance = self.get_instance({})
+        instance = self.get_instance(DUMMY_SETTINGS)
         instance.helper._mo_lookup = MagicMock(
             return_value=[
                 {
@@ -644,7 +649,7 @@ class TestUpdateEmployeeManagerFunctions(_GetInstanceMixin):
     def test_dry_run(self):
         """Test that the dry_run flag overwrites the _mo_post function"""
         # Arrange
-        instance = self.get_instance({}, dry_run=False)
+        instance = self.get_instance(DUMMY_SETTINGS, dry_run=False)
         # Act
         response = instance.helper._mo_post("test", payload={"dummy": "payload"})
 
@@ -652,7 +657,7 @@ class TestUpdateEmployeeManagerFunctions(_GetInstanceMixin):
         assert isinstance(response, MagicMock)
 
         # Arrange
-        instance = self.get_instance({}, dry_run=True)
+        instance = self.get_instance(DUMMY_SETTINGS, dry_run=True)
         # Act
         response = instance.helper._mo_post("test", payload={"dummy": "payload"})
 
@@ -661,7 +666,7 @@ class TestUpdateEmployeeManagerFunctions(_GetInstanceMixin):
 
     def test_update_engagement_noop(self):
         # Arrange
-        instance = self.get_instance({})
+        instance = self.get_instance(DUMMY_SETTINGS)
         instance.helper._mo_post = MagicMock()
         instance.helper._mo_post.return_value.status_code = 200
 
@@ -693,7 +698,7 @@ class TestUpdateEmployeeManagerFunctions(_GetInstanceMixin):
         # Arrange
         start_date = "2000-01-01"
         self.opus_employee["entryDate"] = start_date
-        instance = self.get_instance({})
+        instance = self.get_instance(DUMMY_SETTINGS)
         instance.helper._mo_post = MagicMock()
         instance.helper._mo_post.return_value.status_code = 200
 
@@ -737,7 +742,7 @@ class TestUpdateEmployeeManagerFunctions(_GetInstanceMixin):
         termination_date = "2020-03-10"
         old_start_date = "2010-03-11"
         self.opus_employee["entryDate"] = new_start_date
-        instance = self.get_instance({})
+        instance = self.get_instance(DUMMY_SETTINGS)
         instance.helper._mo_post = MagicMock()
         instance.helper._mo_post.return_value.status_code = 200
 
@@ -789,7 +794,7 @@ class TestUpdateEmployeeManagerFunctions(_GetInstanceMixin):
     def test_delete_canceled(self):
         # Arrange
         eng_uuid = str(uuid4())
-        instance = self.get_instance({})
+        instance = self.get_instance(DUMMY_SETTINGS)
         instance.gql_client.execute.return_value = {
             "engagement_delete": {"uuid": eng_uuid}
         }
@@ -807,7 +812,7 @@ class TestUpdateEmployeeManagerFunctions(_GetInstanceMixin):
         # Arrange
         opus_id = 1234
         eng_uuid = str(uuid4())
-        instance = self.get_instance({})
+        instance = self.get_instance(DUMMY_SETTINGS)
         instance.gql_client.execute.return_value = {
             "engagements": {"objects": [{"uuid": eng_uuid}]}
         }
@@ -825,7 +830,7 @@ class TestUpdateEmployeeManagerFunctions(_GetInstanceMixin):
         # Arrange
         opus_id = 1234
         eng_uuid = str(uuid4())
-        instance = self.get_instance({})
+        instance = self.get_instance(DUMMY_SETTINGS)
         instance.gql_client.execute.return_value = {
             "engagements": {"objects": [{"uuid": eng_uuid}]}
         }
@@ -843,7 +848,7 @@ class TestUpdateEmployeeManagerFunctions(_GetInstanceMixin):
         # Arrange
         opus_id = 1234
         manager_uuid = str(uuid4())
-        instance = self.get_instance({})
+        instance = self.get_instance(DUMMY_SETTINGS)
         instance.gql_client.execute.return_value = {
             "managers": {"objects": [{"uuid": manager_uuid}]}
         }
@@ -861,7 +866,7 @@ class TestUpdateEmployeeManagerFunctions(_GetInstanceMixin):
         # Arrange
         opus_id = 1234
         manager_uuid = str(uuid4())
-        instance = self.get_instance({})
+        instance = self.get_instance(DUMMY_SETTINGS)
         instance.gql_client.execute.return_value = {
             "managers": {"objects": [{"uuid": manager_uuid}]}
         }
@@ -879,7 +884,7 @@ class TestUpdateEmployeeManagerFunctions(_GetInstanceMixin):
     async def test_dar_cache(self):
         """Test that DAR calls are cached so each address is only fetched once"""
         # Arrange
-        instance = self.get_instance({})
+        instance = self.get_instance(DUMMY_SETTINGS)
         assert instance.dar_cache == {}
         with patch(
             "integrations.opus.opus_diff_import.dawa_helper.dawa_lookup"

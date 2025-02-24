@@ -46,6 +46,7 @@ def prepare_re_import(
 
 
 async def import_opus(
+    settings: dict,
     ad_reader=None,
     import_all: bool = False,
     import_last=False,
@@ -54,8 +55,6 @@ async def import_opus(
     dry_run: bool = False,
 ) -> None:
     """Import one or all files from opus even if no previous files have been imported"""
-    settings = load_settings()
-    filter_ids = settings.get("integrations.opus.units.filter_ids", [])
     dumps = opus_helpers.read_available_dumps()
 
     all_dates = dumps.keys()
@@ -70,11 +69,11 @@ async def import_opus(
     date_pairs = pairwise(all_export_dates)
     for date1, date2 in date_pairs:
         await import_one(
-            ad_reader,
-            date2,
-            date1,
-            dumps,
-            filter_ids,
+            settings=settings,
+            ad_reader=ad_reader,
+            xml_date=date2,
+            latest_date=date1,
+            dumps=dumps,
             opus_id=opus_id,
             rundb_write=rundb_write,
             dry_run=dry_run,
@@ -149,6 +148,7 @@ def clear_and_reload(
             ad_reader=AD,
             import_all=import_all,
             import_last=import_last,
+            settings=settings,
             dry_run=dry_run,
         )
     )

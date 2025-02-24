@@ -6,7 +6,6 @@ from datetime import timedelta
 from operator import itemgetter
 from pathlib import Path
 from typing import Dict
-from typing import List
 from typing import Optional
 from uuid import UUID
 
@@ -157,17 +156,15 @@ class OpusDiffImport(object):
         self,
         xml_date,
         ad_reader,
-        filter_ids={},
+        settings,
         dry_run: bool = False,
     ):
         logger.info("Opus diff importer __init__ started")
         self.xml_date = xml_date
         self.ad_reader = ad_reader
 
-        self.settings = load_settings()
-        self.filter_ids = filter_ids or self.settings.get(
-            "integrations.opus.units.filter_ids", []
-        )
+        self.settings = settings
+        self.filter_ids = self.settings.get("integrations.opus.units.filter_ids", [])
         self.dry_run = dry_run
 
         self.session = Session()
@@ -945,11 +942,11 @@ class OpusDiffImport(object):
 
 
 async def import_one(
+    settings: dict,
     ad_reader,
     xml_date: datetime,
     latest_date: Optional[datetime],
     dumps: Dict,
-    filter_ids: List[str],
     opus_id: Optional[int] = None,
     rundb_write=True,
     dry_run=False,
@@ -963,6 +960,8 @@ async def import_one(
     if latest_date:
         latest_path = dumps[latest_date]
     xml_path = dumps[xml_date]
+    filter_ids = settings.get("integrations.opus.units.filter_ids", [])
+    run_db = settings["integrations.opus.import.run_db"]
     (
         units,
         filtered_units,
@@ -978,7 +977,7 @@ async def import_one(
     diff = OpusDiffImport(
         xml_date,
         ad_reader=ad_reader,
-        filter_ids=filter_ids,
+        settings=settings,
         dry_run=dry_run,
     )
     await diff.start_import(units, employees, terminated_employees, cancelled_employees)
@@ -986,20 +985,19 @@ async def import_one(
 
     diff.handle_filtered_units(filtered_units)
     if rundb_write and not dry_run:
-        opus_helpers.local_db_insert((xml_date, "Diff update ended: {}"))
+        opus_helpers.local_db_insert(run_db, (xml_date, "Diff update ended: {}"))
     print()
 
 
-async def start_opus_diff(ad_reader=None, dry_run: bool = False):
+async def start_opus_diff(settings: dict, ad_reader=None, dry_run: bool = False):
     """
     Start an opus update, use the oldest available dump that has not
     already been imported.
     """
-    SETTINGS = load_settings()
+    settings = load_settings()
 
     dumps = opus_helpers.read_available_dumps()
-    run_db = Path(SETTINGS["integrations.opus.import.run_db"])
-    filter_ids = SETTINGS.get("integrations.opus.units.filter_ids", [])
+    run_db = Path(settings["integrations.opus.import.run_db"])
 
     if not run_db.is_file():
         logger.error("Local base not correctly initialized")
@@ -1008,11 +1006,11 @@ async def start_opus_diff(ad_reader=None, dry_run: bool = False):
 
     while xml_date:
         await import_one(
-            ad_reader,
-            xml_date,  # type: ignore
-            latest_date,  # type: ignore
-            dumps,
-            filter_ids,
+            ad_reader=ad_reader,
+            xml_date=xml_date,  # type: ignore
+            latest_date=latest_date,  # type: ignore
+            dumps=dumps,
+            settings=settings,
             opus_id=None,
             dry_run=dry_run,
         )
@@ -1027,6 +1025,6 @@ if __name__ == "__main__":
     reader = ad_reader.ADParameterReader() if settings.get("integrations.ad") else None
 
     try:
-        asyncio.run(start_opus_diff(ad_reader=reader))
+        asyncio.run(start_opus_diff(ad_reader=reader, settings=settings))
     except RunDBInitException:
         print("RunDB not initialized")
