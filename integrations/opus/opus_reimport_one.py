@@ -1,11 +1,13 @@
 import click
 from fastramqpi.ra_utils.load_settings import load_setting
+from fastramqpi.ra_utils.load_settings import load_settings
 from more_itertools import first
 from more_itertools import only
 from os2mo_helpers.mora_helpers import MoraHelper
 
 from integrations.ad_integration import ad_reader
 from integrations.opus import opus_helpers
+from integrations.opus.ad import LdapADGUIDReader
 from integrations.opus.clear_and_import_opus import import_opus
 from integrations.opus.opus_file_reader import get_opus_filereader
 from tools.data_fixers.remove_from_lora import delete_object_and_orgfuncs
@@ -62,9 +64,16 @@ def cli(mox_base, mora_base, delete, full_history, opus_id, use_ad, dry_run):
     click.echo(
         f"{'Delete and reimport' if delete else 'Reimport'} '{object_type}' with {uuid=}"
     )
-    AD = ad_reader.ADParameterReader() if use_ad else None
+    reader: ad_reader.ADParameterReader | LdapADGUIDReader | None = None
+    settings = load_settings()
+    if (hostname := settings.get("integrations.opus.ldap_url")) and (
+        port := settings.get("integrations.opus.ldap_port")
+    ):
+        reader = LdapADGUIDReader(host=hostname, port=port)
+    elif settings.get("integrations.ad"):
+        reader = ad_reader.ADParameterReader()
     import_opus(
-        ad_reader=AD,
+        ad_reader=reader,
         import_all=full_history,
         import_last=not full_history,
         opus_id=opus_id,

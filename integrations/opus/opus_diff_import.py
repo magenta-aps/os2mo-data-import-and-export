@@ -25,6 +25,7 @@ from integrations import dawa_helper
 from integrations.ad_integration import ad_reader
 from integrations.opus import opus_helpers
 from integrations.opus import payloads
+from integrations.opus.ad import LdapADGUIDReader
 from integrations.opus.opus_exceptions import RunDBInitException
 from integrations.opus.opus_exceptions import UnknownOpusUnit
 
@@ -1023,8 +1024,13 @@ async def start_opus_diff(ad_reader=None, dry_run: bool = False):
 
 if __name__ == "__main__":
     settings = load_settings()
-
-    reader = ad_reader.ADParameterReader() if settings.get("integrations.ad") else None
+    reader: ad_reader.ADParameterReader | LdapADGUIDReader | None = None
+    if (hostname := settings.get("integrations.opus.ldap_url")) and (
+        port := settings.get("integrations.opus.ldap_port")
+    ):
+        reader = LdapADGUIDReader(host=hostname, port=port)
+    elif settings.get("integrations.ad"):
+        reader = ad_reader.ADParameterReader()
 
     try:
         asyncio.run(start_opus_diff(ad_reader=reader))
