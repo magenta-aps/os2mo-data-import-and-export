@@ -63,6 +63,9 @@ class FakeLC:
     async def _fetch_classes(self, uuid):
         return self.classes[str(uuid)]
 
+    async def _fetch_facets(self, uuid):
+        return self.facets[str(uuid)]
+
 
 class FakeLCSqlExport(SqlExport):
     def _get_lora_cache(self, resolve_dar, use_pickle):  # type: ignore

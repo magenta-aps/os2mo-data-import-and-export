@@ -56,11 +56,39 @@ SqlExportHistoric = Annotated[
 ]
 
 
+async def _ensure_cached(cache: dict, fetch, uuids) -> None:
+    """Fetch any of ``uuids`` missing from ``cache`` and merge them in."""
+    for uuid in {u for u in uuids if u and u not in cache}:
+        cache.update(await fetch(uuid))
+
+
+async def _ensure_classes(sql_exporter: _SqlExport, uuids) -> None:
+    """Ensure the referenced classes are present in the in-memory cache.
+
+    The class cache is only populated at startup, so in event-driven mode an
+    entity may reference a class that was created afterwards. We fetch only the
+    missing ones on demand, making this a no-op once the cache is warm. This
+    avoids relying on AMQP message ordering between class events and the events
+    of entities that reference them.
+    """
+    await _ensure_cached(sql_exporter.lc.classes, sql_exporter.lc._fetch_classes, uuids)
+
+
+async def _ensure_facets(sql_exporter: _SqlExport, uuids) -> None:
+    """Ensure the referenced facets are cached (see ``_ensure_classes``)."""
+    await _ensure_cached(sql_exporter.lc.facets, sql_exporter.lc._fetch_facets, uuids)
+
+
 async def handle_address(uuid: PayloadUUID, sql_exporter: SqlExport):
     result = await sql_exporter.lc._fetch_address(uuid)
+    results = result.get(str(uuid), [])
+    await _ensure_classes(
+        sql_exporter,
+        [c for res in results for c in (res["adresse_type"], res["visibility"])],
+    )
     address_objects = []
     dar_address_objects = []
-    for res in result.get(str(uuid), []):
+    for res in results:
         if res["scope"] == "DAR":
             dar_address_objects.append(
                 sql_exporter._generate_sql_dar_addresses(uuid, res, DARAdresse)
@@ -77,10 +105,15 @@ async def handle_association(
     sql_exporter: SqlExport,
 ):
     result = await sql_exporter.lc._fetch_associations(uuid)
+    results = result.get(str(uuid), [])
+    await _ensure_classes(
+        sql_exporter,
+        [c for res in results for c in (res["association_type"], res["job_function"])],
+    )
 
     association_objects = [
         sql_exporter._generate_sql_associations(uuid, res, Tilknytning)
-        for res in result.get(str(uuid), [])
+        for res in results
     ]
 
     sql_exporter.update_sql(uuid, association_objects, Tilknytning)
@@ -92,6 +125,9 @@ async def handle_class(
 ):
     result = await sql_exporter.lc._fetch_classes(uuid)
     res = result.get(str(uuid))
+    if res:
+        # A class row denormalises its facet's user_key.
+        await _ensure_facets(sql_exporter, [res["facet"]])
     class_objects = (
         [sql_exporter._generate_sql_classes(uuid, res, Klasse)] if res else []
     )
@@ -103,9 +139,17 @@ async def handle_engagement(
     sql_exporter: SqlExport,
 ):
     result = await sql_exporter.lc._fetch_engagements(uuid)
+    results = result.get(str(uuid), [])
+    await _ensure_classes(
+        sql_exporter,
+        [
+            c
+            for res in results
+            for c in (res["engagement_type"], res["primary_type"], res["job_function"])
+        ],
+    )
     engagements_objects = [
-        sql_exporter._generate_sql_engagements(uuid, res, Engagement)
-        for res in result.get(str(uuid), [])
+        sql_exporter._generate_sql_engagements(uuid, res, Engagement) for res in results
     ]
 
     sql_exporter.update_sql(uuid, engagements_objects, Engagement)
@@ -162,10 +206,12 @@ async def handle_kle(
     sql_exporter: SqlExport,
 ):
     result = await sql_exporter.lc._fetch_kles(uuid)
-    kle_objects = [
-        sql_exporter._generate_sql_kle(uuid, res, KLE)
-        for res in result.get(str(uuid), [])
-    ]
+    results = result.get(str(uuid), [])
+    await _ensure_classes(
+        sql_exporter,
+        [c for res in results for c in (res["kle_aspect"], res["kle_number"])],
+    )
+    kle_objects = [sql_exporter._generate_sql_kle(uuid, res, KLE) for res in results]
 
     sql_exporter.update_sql(uuid, kle_objects, KLE)
 
@@ -175,9 +221,10 @@ async def handle_leave(
     sql_exporter: SqlExport,
 ):
     result = await sql_exporter.lc._fetch_leaves(uuid)
+    results = result.get(str(uuid), [])
+    await _ensure_classes(sql_exporter, [res["leave_type"] for res in results])
     leaves_objects = [
-        sql_exporter._generate_sql_leave(uuid, res, Orlov)
-        for res in result.get(str(uuid), [])
+        sql_exporter._generate_sql_leave(uuid, res, Orlov) for res in results
     ]
 
     sql_exporter.update_sql(uuid, leaves_objects, Orlov)
@@ -188,18 +235,33 @@ async def handle_manager(
     sql_exporter: SqlExport,
 ):
     result = await sql_exporter.lc._fetch_managers(uuid)
-    managers_objects = []
-    for res in result.get(str(uuid), []):
-        managers_objects.append(sql_exporter._generate_sql_managers(uuid, res, Leder))
-
-        for responsibility_uuid in res["manager_responsibility"]:
-            manager_responsibility_objects = [
-                sql_exporter._generate_sql_manager_responsibility(
-                    responsibility_uuid, uuid, res, LederAnsvar
-                )
-                for res in result.get(str(uuid), [])
-            ]
-            sql_exporter.update_sql(uuid, manager_responsibility_objects, LederAnsvar)
+    results = result.get(str(uuid), [])
+    await _ensure_classes(
+        sql_exporter,
+        [
+            c
+            for res in results
+            for c in (
+                res["manager_level"],
+                res["manager_type"],
+                *res["manager_responsibility"],
+            )
+        ],
+    )
+    managers_objects = [
+        sql_exporter._generate_sql_managers(uuid, res, Leder) for res in results
+    ]
+    # Compute responsibilities outside the per-manager loop so that an empty
+    # `results` (a terminated/deleted manager) still clears any existing
+    # LederAnsvar rows instead of leaving them orphaned.
+    responsibility_objects = [
+        sql_exporter._generate_sql_manager_responsibility(
+            responsibility_uuid, uuid, res, LederAnsvar
+        )
+        for res in results
+        for responsibility_uuid in res["manager_responsibility"]
+    ]
+    sql_exporter.update_sql(uuid, responsibility_objects, LederAnsvar)
     sql_exporter.update_sql(uuid, managers_objects, Leder)
 
 
@@ -221,9 +283,22 @@ async def handle_org_unit(
     sql_exporter: SqlExport,
 ):
     result = await sql_exporter.lc._fetch_units(uuid)
+    results = result.get(str(uuid), [])
+    await _ensure_classes(
+        sql_exporter,
+        [
+            c
+            for res in results
+            for c in (
+                res["unit_type"],
+                res["level"],
+                res["time_planning"],
+                res["org_unit_hierarchy"],
+            )
+        ],
+    )
     units_objects = [
-        sql_exporter._generate_sql_units(uuid, res, Enhed)
-        for res in result.get(str(uuid), [])
+        sql_exporter._generate_sql_units(uuid, res, Enhed) for res in results
     ]
 
     sql_exporter.update_sql(uuid, units_objects, Enhed)
@@ -253,7 +328,7 @@ handle_function_map = {
     "kle": handle_kle,
     "leave": handle_leave,
     "manager": handle_manager,
-    "related": handle_related,
+    "related_unit": handle_related,
     "org_unit": handle_org_unit,
     "person": handle_person,
 }
@@ -269,7 +344,7 @@ handle_function_map = {
 @actualstate_router.register("kle")
 @actualstate_router.register("leave")
 @actualstate_router.register("manager")
-@actualstate_router.register("related")  # type: ignore
+@actualstate_router.register("related_unit")  # type: ignore
 @actualstate_router.register("org_unit")
 @actualstate_router.register("person")
 async def trigger_actual_state_event(
@@ -292,7 +367,7 @@ async def trigger_actual_state_event(
 @historic_router.register("kle")
 @historic_router.register("leave")
 @historic_router.register("manager")
-@historic_router.register("related")  # type: ignore
+@historic_router.register("related_unit")  # type: ignore
 @historic_router.register("org_unit")
 @historic_router.register("person")
 async def trigger_historic_event(
