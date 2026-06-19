@@ -1,5 +1,6 @@
 *.p
 *.sql
+!exporters/sql_export/init-databases.sql
 *.log
 *.csv
 
