@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from sql_export.main import create_app
 
-GRAPHQL_VERSION = 22
+GRAPHQL_VERSION = 30
 VALIDITY = {"from": "2020-01-01", "to": None}
 
 

@@ -135,7 +135,7 @@ class GQLLoraCache:
 
     def make_client(self) -> GraphQLClient:
         return GraphQLClient(
-            url=f"{self.settings.mora_base}/graphql/v22",
+            url=f"{self.settings.mora_base}/graphql/v30",
             client_id=self.settings.client_id,
             client_secret=self.settings.client_secret,  # type: ignore
             auth_realm=self.settings.auth_realm,
