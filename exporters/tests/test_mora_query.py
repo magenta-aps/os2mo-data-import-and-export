@@ -10,9 +10,9 @@ import os
 import unittest
 
 from chardet.universaldetector import UniversalDetector
-from os2mo_helpers.mora_helpers import MoraHelper
 
 from exporters import common_queries as cq
+from integrations.mora_helper import MoraHelper
 
 MORA_BASE = os.environ.get("MORA_BASE", "http://localhost:5000")
 PATH_TO_TEST_FILE = os.environ.get(

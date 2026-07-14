@@ -12,10 +12,10 @@ import click
 from fastramqpi.ra_utils.deprecation import deprecated
 from fastramqpi.ra_utils.load_settings import load_settings
 from fastramqpi.raclients.upload import file_uploader
-from os2mo_helpers.mora_helpers import MoraHelper
 
 from exporters.sql_export.lora_cache import get_cache as LoraCache
 from exporters.utils.priority_by_class import lc_choose_public_address
+from integrations.mora_helper import MoraHelper
 
 logger = logging.getLogger("viborg_externe")
 

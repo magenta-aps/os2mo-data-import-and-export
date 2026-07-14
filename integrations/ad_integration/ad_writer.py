@@ -27,7 +27,8 @@ from jinja2 import StrictUndefined
 from jinja2 import Undefined
 from more_itertools import first
 from more_itertools import unzip
-from os2mo_helpers.mora_helpers import MoraHelper
+
+from integrations.mora_helper import MoraHelper
 
 from . import ad_templates
 from .ad_common import AD

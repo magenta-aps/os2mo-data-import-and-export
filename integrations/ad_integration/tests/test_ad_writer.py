@@ -14,8 +14,9 @@ from hypothesis import strategies as st
 from jinja2.exceptions import UndefinedError
 from more_itertools import first_true
 from more_itertools import only
-from os2mo_helpers.mora_helpers import MoraHelper
 from parameterized import parameterized
+
+from integrations.mora_helper import MoraHelper
 
 from ..ad_exceptions import CommandFailure
 from ..ad_exceptions import CprNotFoundInADException

@@ -8,8 +8,9 @@ from unittest.mock import patch
 from uuid import uuid4
 
 import requests
-from os2mo_helpers.mora_helpers import MoraHelper
 from winrm import Session
+
+from integrations.mora_helper import MoraHelper
 
 from ..ad_common import AD
 from ..ad_writer import MORESTSource

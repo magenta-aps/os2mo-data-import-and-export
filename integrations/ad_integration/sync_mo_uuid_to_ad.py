@@ -9,7 +9,8 @@ from click_option_group import optgroup
 from fastramqpi.ra_utils.apply import apply
 from fastramqpi.ra_utils.load_settings import load_settings
 from fastramqpi.ra_utils.tqdm_wrapper import tqdm
-from os2mo_helpers.mora_helpers import MoraHelper
+
+from integrations.mora_helper import MoraHelper
 
 from .ad_common import AD
 from .ad_exceptions import ImproperlyConfigured

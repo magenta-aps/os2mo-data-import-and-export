@@ -24,7 +24,6 @@ from gql.client import AsyncClientSession
 from more_itertools import first
 from more_itertools import flatten
 from more_itertools import only
-from os2mo_helpers.mora_helpers import MoraHelper
 
 from exporters.plan2learn.plan2learn_settings import Settings
 from exporters.plan2learn.plan2learn_settings import Variant
@@ -34,6 +33,7 @@ from exporters.sql_export.gql_lora_cache_async import GQLLoraCache
 from exporters.sql_export.lora_cache import get_cache as LoraCache
 from exporters.utils.priority_by_class import choose_public_address
 from exporters.utils.priority_by_class import lc_choose_public_address
+from integrations.mora_helper import MoraHelper
 
 LOG_LEVEL = logging.DEBUG
 

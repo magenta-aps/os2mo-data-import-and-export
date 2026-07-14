@@ -26,7 +26,6 @@ from gql.client import SyncClientSession
 from more_itertools import first
 from more_itertools import one
 from more_itertools import prepend
-from os2mo_helpers.mora_helpers import MoraHelper
 from sqlalchemy import or_
 from sqlalchemy import select
 
@@ -35,6 +34,7 @@ from exporters.sql_export.sql_table_defs import WAdresse as Adresse
 from exporters.sql_export.sql_table_defs import WBruger as Bruger
 from exporters.sql_export.sql_table_defs import WEngagement as Engagement
 from exporters.sql_export.sql_table_defs import WEnhed as Enhed
+from integrations.mora_helper import MoraHelper
 from reports.query_actualstate import expand_org_path
 from reports.query_actualstate import run_report
 from reports.query_actualstate import set_of_org_units

@@ -15,9 +15,9 @@ import pathlib
 from anytree import PostOrderIter
 from anytree import PreOrderIter
 from fastramqpi.raclients.upload import file_uploader
-from os2mo_helpers.mora_helpers import MoraHelper
 
 from exporters.utils.priority_by_class import choose_public_address
+from integrations.mora_helper import MoraHelper
 
 """
 Rapportens opdrag: Tæl lederes medarbejdere, og den har udviklet sig lidt:

@@ -2,9 +2,9 @@ import click
 from fastramqpi.ra_utils.load_settings import load_setting
 from more_itertools import first
 from more_itertools import only
-from os2mo_helpers.mora_helpers import MoraHelper
 
 from integrations.ad_integration import ad_reader
+from integrations.mora_helper import MoraHelper
 from integrations.opus import opus_helpers
 from integrations.opus.clear_and_import_opus import import_opus
 from integrations.opus.opus_file_reader import get_opus_filereader

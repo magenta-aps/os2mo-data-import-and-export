@@ -25,7 +25,8 @@ import mock
 import requests
 import viborg_managers
 from freezegun import freeze_time
-from os2mo_helpers.mora_helpers import MoraHelper
+
+from integrations.mora_helper import MoraHelper
 
 sys.path[0:0] = [
     os.environ["OS2MO_SRC_DIR"] + "/backend/tests",

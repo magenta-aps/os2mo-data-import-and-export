@@ -13,7 +13,8 @@ from anytree import PreOrderIter
 from fastramqpi.ra_utils.load_settings import load_settings
 from fastramqpi.raclients.upload import file_uploader
 from more_itertools import one
-from os2mo_helpers.mora_helpers import MoraHelper
+
+from integrations.mora_helper import MoraHelper
 
 # --------------------------------------------------------------------------------------
 # CustomerReports class

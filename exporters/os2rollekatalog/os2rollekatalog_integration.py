@@ -26,10 +26,11 @@ import click
 import requests
 from fastramqpi.ra_utils.load_settings import load_setting
 from more_itertools import bucket
-from os2mo_helpers.mora_helpers import MoraHelper
 from tenacity import retry
 from tenacity import stop_after_delay
 from tenacity import wait_fixed
+
+from integrations.mora_helper import MoraHelper
 
 from .config import RollekatalogSettings
 from .titles import export_titles

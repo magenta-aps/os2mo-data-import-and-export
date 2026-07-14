@@ -1,6 +1,7 @@
 import click
 from fastramqpi.ra_utils.load_settings import load_setting
-from os2mo_helpers.mora_helpers import MoraHelper
+
+from integrations.mora_helper import MoraHelper
 
 
 @click.command()

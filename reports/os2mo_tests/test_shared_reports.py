@@ -7,9 +7,9 @@ import json
 import pandas as pd
 import pytest
 from anytree import Node
-from os2mo_helpers.mora_helpers import MoraHelper
 from pandas._testing import assert_frame_equal
 
+from integrations.mora_helper import MoraHelper
 from reports.shared_reports import CustomerReports
 from reports.shared_reports import report_to_csv
 

@@ -16,9 +16,9 @@ from fastramqpi.ra_utils.load_settings import load_settings
 from fastramqpi.ra_utils.tqdm_wrapper import tqdm
 from more_itertools import only
 from more_itertools import partition
-from os2mo_helpers.mora_helpers import MoraHelper
 
 from exporters.sql_export.lora_cache import get_cache as LoraCache
+from integrations.mora_helper import MoraHelper
 
 from .ad_logger import start_logging
 from .ad_reader import ADParameterReader
