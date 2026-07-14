@@ -131,53 +131,53 @@ create mutation needed (lines 108-608). Copy mutation string shapes from there:
 This file (199 lines) constructs all REST payloads. Rewrite every function to return
 a GraphQL input dict.
 
-- [ ] 2.1. `create_user(employee, org_uuid, uuid=None)` -> return dict with:
+- [x] 2.1. `create_user(employee, org_uuid, uuid=None)` -> return dict with:
       `given_name`, `surname`, `cpr_number`, `uuid` (if provided).
       Drop `org` field (derived from auth context).
 
-- [ ] 2.2. `edit_engagement(data, mo_engagement_uuid)` -> return `{"uuid": mo_engagement_uuid, **data}`.
+- [x] 2.2. `edit_engagement(data, mo_engagement_uuid)` -> return `{"uuid": mo_engagement_uuid, **data}`.
       Drop `type` and `data` wrapper.
 
-- [ ] 2.3. `create_engagement(...)` -> return dict with:
+- [x] 2.3. `create_engagement(...)` -> return dict with:
       `org_unit` (bare UUID), `person` (bare UUID), `job_function` (bare UUID),
       `engagement_type` (bare UUID), `user_key`, `validity`.
       Drop `type`.
 
-- [ ] 2.4. `create_org_unit(...)` -> return dict with:
+- [x] 2.4. `create_org_unit(...)` -> return dict with:
       `uuid`, `user_key`, `name`, `parent` (bare UUID), `org_unit_type` (bare UUID), `validity`.
 
-- [ ] 2.5. `edit_org_unit(...)` -> return `{"uuid": unit_uuid, "name": ..., "parent": parent_uuid,
+- [x] 2.5. `edit_org_unit(...)` -> return `{"uuid": unit_uuid, "name": ..., "parent": parent_uuid,
       "org_unit_type": unit_type, "validity": ...}`. Drop `type` and `data` wrapper.
 
-- [ ] 2.6. `terminate_detail(uuid, terminate_date, detail_type, terminate_from=None)` ->
+- [x] 2.6. `terminate_detail(uuid, terminate_date, detail_type, terminate_from=None)` ->
       return `{"uuid": uuid, "validity": {"to": date_str, "from": from_str?}}`.
       The `detail_type` is no longer in the payload - it determines which `*_terminate`
       mutation to call.
 
-- [ ] 2.7. `connect_it_system_to_user(...)` -> return dict with:
+- [x] 2.7. `connect_it_system_to_user(...)` -> return dict with:
       `user_key`, `itsystem` (bare UUID), `person` (bare UUID), `validity`.
       Drop `type`.
 
-- [ ] 2.8. `edit_it_system_username(uuid, username, from_date)` -> return
+- [x] 2.8. `edit_it_system_username(uuid, username, from_date)` -> return
       `{"uuid": uuid, "user_key": username, "validity": {"from": from_date, "to": None}}`.
       Drop `type` and `data` wrapper.
 
-- [ ] 2.9. `create_address(...)` -> return dict with:
+- [x] 2.9. `create_address(...)` -> return dict with:
       `value`, `address_type` (bare UUID), `validity`, `visibility` (bare UUID or None),
       `org_unit` or `person` (bare UUID, whichever is set).
       Drop `type`.
 
-- [ ] 2.10. `edit_address(data, mo_address_uuid)` -> return `{"uuid": mo_address_uuid, **data}`.
-       Drop `type` and `data` wrapper.
+- [x] 2.10. `edit_address(data, mo_address_uuid)` -> return `{"uuid": mo_address_uuid, **data}`.
+        Drop `type` and `data` wrapper.
 
-- [ ] 2.11. `create_manager(...)` -> return dict with:
-       `user_key`, `org_unit` (bare UUID), `person` (bare UUID), `manager_type` (bare UUID),
-       `manager_level` (bare UUID), `responsibility` (list of bare UUIDs), `validity`.
-       Drop `type`.
+- [x] 2.11. `create_manager(...)` -> return dict with:
+        `user_key`, `org_unit` (bare UUID), `person` (bare UUID), `manager_type` (bare UUID),
+        `manager_level` (bare UUID), `responsibility` (list of bare UUIDs), `validity`.
+        Drop `type`.
 
-- [ ] 2.12. `edit_manager(...)` -> return `{"uuid": object_uuid, "org_unit": ..., "person": ...,
-       "manager_type": ..., "manager_level": ..., "responsibility": [...], "validity": ...}`.
-       Drop `type` and `data` wrapper.
+- [x] 2.12. `edit_manager(...)` -> return `{"uuid": object_uuid, "org_unit": ..., "person": ...,
+        "manager_type": ..., "manager_level": ..., "responsibility": [...], "validity": ...}`.
+        Drop `type` and `data` wrapper.
 
 ### Phase 3: Migrate `integrations/opus/opus_diff_import.py` call sites
 

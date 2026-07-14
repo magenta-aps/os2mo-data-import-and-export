@@ -1,4 +1,3 @@
-# from collections import OrderedDict
 from datetime import datetime
 from typing import Optional
 from uuid import UUID
@@ -16,10 +15,9 @@ def create_user(employee, org_uuid, uuid=None):
         print(empl)
     cpr = opus_helpers.read_cpr(employee)
     payload = {
-        "givenname": employee["firstName"],
+        "given_name": employee["firstName"],
         "surname": employee["lastName"],
-        "cpr_no": cpr,
-        "org": {"uuid": org_uuid},
+        "cpr_number": cpr,
     }
     if uuid is not None:
         payload["uuid"] = uuid
@@ -27,7 +25,7 @@ def create_user(employee, org_uuid, uuid=None):
 
 
 def edit_engagement(data, mo_engagement_uuid):
-    payload = {"type": "engagement", "uuid": mo_engagement_uuid, "data": data}
+    payload = {"uuid": mo_engagement_uuid, **data}
     return payload
 
 
@@ -35,11 +33,10 @@ def create_engagement(
     employee, user_uuid, unit_uuid, job_function, engagement_type, validity
 ):
     payload = {
-        "type": "engagement",
-        "org_unit": {"uuid": str(unit_uuid)},
-        "person": {"uuid": user_uuid},
-        "job_function": {"uuid": job_function},
-        "engagement_type": {"uuid": engagement_type},
+        "org_unit": str(unit_uuid),
+        "person": user_uuid,
+        "job_function": job_function,
+        "engagement_type": engagement_type,
         "user_key": employee["@id"],
         "validity": validity,
     }
@@ -51,8 +48,8 @@ def create_org_unit(unit, unit_user_key, unit_uuid, parent, unit_type, from_date
         "uuid": unit_uuid,
         "user_key": unit_user_key,
         "name": unit["longName"],
-        "parent": {"uuid": parent},
-        "org_unit_type": {"uuid": unit_type},
+        "parent": parent,
+        "org_unit_type": unit_type,
         "validity": {"from": from_date, "to": None},
     }
     return payload
@@ -60,15 +57,12 @@ def create_org_unit(unit, unit_user_key, unit_uuid, parent, unit_type, from_date
 
 def edit_org_unit(unit, unit_user_key, unit_uuid, parent, unit_type, from_date):
     payload = {
-        "type": "org_unit",
-        "data": {
-            "uuid": unit_uuid,
-            "user_key": unit_user_key,
-            "name": unit["longName"],
-            "parent": {"uuid": parent},
-            "org_unit_type": {"uuid": unit_type},
-            "validity": {"from": from_date, "to": None},
-        },
+        "uuid": unit_uuid,
+        "user_key": unit_user_key,
+        "name": unit["longName"],
+        "parent": parent,
+        "org_unit_type": unit_type,
+        "validity": {"from": from_date, "to": None},
     }
     return payload
 
@@ -85,13 +79,14 @@ def terminate_detail(
     Args:
         uuid: string representation of the uuid for the object to be terminated
         terminate_date: the last active date for the object
-        detail_type: eg. engagement, address, manager.
+        detail_type: eg. engagement, address, manager. Not included in the
+            returned payload; the caller uses it to select the GraphQL
+            ``*_terminate`` mutation.
         terminate_from: optional first date of termination. If this is set the object will be terminated
         in the interval from terminate_from to terminate_date. This is used to move the startdate of engagements.
         In this case terminal_date will be the last inactive date for the object.
     """
     payload = {
-        "type": detail_type,
         "uuid": uuid,
         "validity": {"to": terminate_date.strftime("%Y-%m-%d")},
     }
@@ -101,16 +96,15 @@ def terminate_detail(
 
 
 def terminate_manager(uuid, terminate_date):
-    payload = {"type": "manager", "uuid": uuid, "validity": {"to": terminate_date}}
+    payload = {"uuid": uuid, "validity": {"to": terminate_date}}
     return payload
 
 
 def connect_it_system_to_user(username, it_system, person_uuid, from_date):
     payload = {
-        "type": "it",
         "user_key": username,
-        "itsystem": {"uuid": it_system},
-        "person": {"uuid": person_uuid},
+        "itsystem": it_system,
+        "person": person_uuid,
         "validity": {"from": from_date, "to": None},
     }
     return payload
@@ -118,12 +112,9 @@ def connect_it_system_to_user(username, it_system, person_uuid, from_date):
 
 def edit_it_system_username(uuid, username, from_date):
     payload = {
-        "type": "it",
         "uuid": uuid,
-        "data": {
-            "user_key": username,
-            "validity": {"from": from_date, "to": None},
-        },
+        "user_key": username,
+        "validity": {"from": from_date, "to": None},
     }
     return payload
 
@@ -142,22 +133,25 @@ def create_address(
         raise Exception("Only a unit or a person can be specified")
 
     payload = {
-        "type": "address",
         "value": value,
-        "address_type": address_type,
+        "address_type": address_type["uuid"]
+        if isinstance(address_type, dict)
+        else address_type,
         "validity": validity,
-        "visibility": visibility,
+        "visibility": visibility["uuid"]
+        if isinstance(visibility, dict)
+        else visibility,
     }
 
     if unit_uuid is not None:
-        payload["org_unit"] = {"uuid": unit_uuid}
+        payload["org_unit"] = unit_uuid
     if user_uuid is not None:
-        payload["person"] = {"uuid": user_uuid}
+        payload["person"] = user_uuid
     return payload
 
 
 def edit_address(data, mo_address_uuid):
-    payload = {"type": "address", "uuid": mo_address_uuid, "data": data}
+    payload = {"uuid": mo_address_uuid, **data}
     return payload
 
 
@@ -165,15 +159,12 @@ def create_manager(
     user_key, unit, person, manager_type, level, responsibility, validity
 ):
     payload = {
-        "type": "manager",
         "user_key": user_key,
-        "org_unit": {"uuid": unit},
-        "person": {"uuid": person},
-        "manager_type": {"uuid": manager_type},
-        "manager_level": {"uuid": level},
-        "responsibility": [  # OPUS will never give more than one
-            {"uuid": responsibility}
-        ],
+        "org_unit": unit,
+        "person": person,
+        "manager_type": manager_type,
+        "manager_level": level,
+        "responsibility": [responsibility],
         "validity": validity,
     }
     return payload
@@ -183,17 +174,12 @@ def edit_manager(
     object_uuid, unit, person, manager_type, level, responsibility, validity
 ):
     payload = {
-        "type": "manager",
         "uuid": object_uuid,
-        "data": {
-            "org_unit": {"uuid": unit},
-            "person": {"uuid": person},
-            "manager_type": {"uuid": manager_type},
-            "manager_level": {"uuid": level},
-            "responsibility": [  # OPUS will never give more than one
-                {"uuid": responsibility}
-            ],
-            "validity": validity,
-        },
+        "org_unit": unit,
+        "person": person,
+        "manager_type": manager_type,
+        "manager_level": level,
+        "responsibility": [responsibility],
+        "validity": validity,
     }
     return payload
