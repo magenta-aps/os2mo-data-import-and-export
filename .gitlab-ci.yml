@@ -166,6 +166,11 @@ Test plan2learn:
     - cp settings/kommune-andeby.json settings/settings.json
     - pytest exporters/tests/test_plan2learn_export_job.py
 
+Test viborg_eksterne:
+  extends: .test-python
+  script:
+    - pytest exporters/viborg_eksterne/tests/
+
 
 #TODO readd these tests once everything has been set again
 #Test engagements Reports:
