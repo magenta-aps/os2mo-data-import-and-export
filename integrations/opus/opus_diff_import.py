@@ -772,6 +772,9 @@ class OpusDiffImport(object):
         if employee["position"] is None:
             logger.warning("Error in opus-file. Missing 'position'")
             return
+        if employee["orgUnit"] is None:  # https://redmine.magenta.dk/issues/71320
+            logger.warning("Error in opus-file. Missing 'org_unit'")
+            return
         if employee["entryDate"] is None:
             logger.warning(
                 "Error in opus-file. No entryDate for this employee. Skipping."
