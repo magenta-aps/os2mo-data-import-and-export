@@ -8,6 +8,8 @@ import time
 from contextlib import asynccontextmanager
 from typing import Annotated
 from typing import AsyncGenerator
+from typing import Awaitable
+from typing import Callable
 from uuid import UUID
 
 from fastapi import APIRouter
@@ -20,6 +22,7 @@ from fastramqpi.events import GraphQLEvents
 from fastramqpi.events import Listener
 from fastramqpi.main import FastRAMQPI
 from fastramqpi.metrics import dipex_last_success_timestamp
+from fastramqpi.ramqp.mo import _MORoutingKey
 
 from .config import DatabaseSettings
 from .config import GqlLoraCacheSettings
@@ -240,7 +243,7 @@ async def handle_person(
     sql_exporter.update_sql(uuid, users_objects, Bruger)
 
 
-handle_function_map = {
+handle_function_map: dict[_MORoutingKey, Callable[..., Awaitable[None]]] = {
     "address": handle_address,
     "association": handle_association,
     "class": handle_class,
@@ -264,7 +267,7 @@ handle_function_map = {
 # event; raising (5xx) leaves it unacknowledged so MO redelivers it.
 @fastapi_router.post("/events/actualstate/{mo_type}")
 async def trigger_actual_state_event(
-    mo_type: str,
+    mo_type: _MORoutingKey,
     event: Event[UUID],
     sql_exporter: SqlExport,
 ) -> None:
@@ -274,7 +277,7 @@ async def trigger_actual_state_event(
 
 @fastapi_router.post("/events/historic/{mo_type}")
 async def trigger_historic_event(
-    mo_type: str,
+    mo_type: _MORoutingKey,
     event: Event[UUID],
     sql_exporter: SqlExportHistoric,
 ) -> None:
