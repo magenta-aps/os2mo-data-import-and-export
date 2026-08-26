@@ -254,7 +254,7 @@ handle_function_map: dict[_MORoutingKey, Callable[..., Awaitable[None]]] = {
     "kle": handle_kle,
     "leave": handle_leave,
     "manager": handle_manager,
-    "related": handle_related,
+    "related_unit": handle_related,
     "org_unit": handle_org_unit,
     "person": handle_person,
 }
