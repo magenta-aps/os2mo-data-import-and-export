@@ -8,18 +8,21 @@ import time
 from contextlib import asynccontextmanager
 from typing import Annotated
 from typing import AsyncGenerator
+from typing import Awaitable
+from typing import Callable
+from uuid import UUID
 
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import FastAPI
 from fastramqpi.config import Settings as FastRAMQPISettings
 from fastramqpi.depends import from_user_context
+from fastramqpi.events import Event
+from fastramqpi.events import GraphQLEvents
+from fastramqpi.events import Listener
 from fastramqpi.main import FastRAMQPI
 from fastramqpi.metrics import dipex_last_success_timestamp
-from fastramqpi.ramqp.depends import RateLimit
-from fastramqpi.ramqp.mo import MORouter
-from fastramqpi.ramqp.mo import MORoutingKey
-from fastramqpi.ramqp.mo import PayloadUUID
+from fastramqpi.ramqp.mo import _MORoutingKey
 
 from .config import DatabaseSettings
 from .config import GqlLoraCacheSettings
@@ -47,8 +50,6 @@ from .trigger import trigger_router
 logger = logging.getLogger(__name__)
 
 fastapi_router = APIRouter()
-actualstate_router = MORouter()
-historic_router = MORouter()
 
 SqlExport = Annotated[_SqlExport, Depends(from_user_context("sql_exporter"))]
 SqlExportHistoric = Annotated[
@@ -56,7 +57,7 @@ SqlExportHistoric = Annotated[
 ]
 
 
-async def handle_address(uuid: PayloadUUID, sql_exporter: SqlExport):
+async def handle_address(uuid: UUID, sql_exporter: SqlExport):
     result = await sql_exporter.lc._fetch_address(uuid)
     address_objects = []
     dar_address_objects = []
@@ -73,7 +74,7 @@ async def handle_address(uuid: PayloadUUID, sql_exporter: SqlExport):
 
 
 async def handle_association(
-    uuid: PayloadUUID,
+    uuid: UUID,
     sql_exporter: SqlExport,
 ):
     result = await sql_exporter.lc._fetch_associations(uuid)
@@ -87,7 +88,7 @@ async def handle_association(
 
 
 async def handle_class(
-    uuid: PayloadUUID,
+    uuid: UUID,
     sql_exporter: SqlExport,
 ):
     result = await sql_exporter.lc._fetch_classes(uuid)
@@ -99,7 +100,7 @@ async def handle_class(
 
 
 async def handle_engagement(
-    uuid: PayloadUUID,
+    uuid: UUID,
     sql_exporter: SqlExport,
 ):
     result = await sql_exporter.lc._fetch_engagements(uuid)
@@ -112,7 +113,7 @@ async def handle_engagement(
 
 
 async def handle_facet(
-    uuid: PayloadUUID,
+    uuid: UUID,
     sql_exporter: SqlExport,
 ):
     result = await sql_exporter.lc._fetch_facets(uuid)
@@ -125,7 +126,7 @@ async def handle_facet(
 
 
 async def handle_it_system(
-    uuid: PayloadUUID,
+    uuid: UUID,
     sql_exporter: SqlExport,
 ):
     result = await sql_exporter.lc._fetch_itsystems(uuid)
@@ -138,7 +139,7 @@ async def handle_it_system(
 
 
 async def handle_it_user(
-    uuid: PayloadUUID,
+    uuid: UUID,
     sql_exporter: SqlExport,
 ):
     result = await sql_exporter.lc._fetch_it_connections(uuid)
@@ -158,7 +159,7 @@ async def handle_it_user(
 
 
 async def handle_kle(
-    uuid: PayloadUUID,
+    uuid: UUID,
     sql_exporter: SqlExport,
 ):
     result = await sql_exporter.lc._fetch_kles(uuid)
@@ -171,7 +172,7 @@ async def handle_kle(
 
 
 async def handle_leave(
-    uuid: PayloadUUID,
+    uuid: UUID,
     sql_exporter: SqlExport,
 ):
     result = await sql_exporter.lc._fetch_leaves(uuid)
@@ -184,7 +185,7 @@ async def handle_leave(
 
 
 async def handle_manager(
-    uuid: PayloadUUID,
+    uuid: UUID,
     sql_exporter: SqlExport,
 ):
     result = await sql_exporter.lc._fetch_managers(uuid)
@@ -204,7 +205,7 @@ async def handle_manager(
 
 
 async def handle_related(
-    uuid: PayloadUUID,
+    uuid: UUID,
     sql_exporter: SqlExport,
 ):
     result = await sql_exporter.lc._fetch_related(uuid)
@@ -217,7 +218,7 @@ async def handle_related(
 
 
 async def handle_org_unit(
-    uuid: PayloadUUID,
+    uuid: UUID,
     sql_exporter: SqlExport,
 ):
     result = await sql_exporter.lc._fetch_units(uuid)
@@ -230,7 +231,7 @@ async def handle_org_unit(
 
 
 async def handle_person(
-    uuid: PayloadUUID,
+    uuid: UUID,
     sql_exporter: SqlExport,
 ):
     result = await sql_exporter.lc._fetch_users(uuid)
@@ -242,7 +243,7 @@ async def handle_person(
     sql_exporter.update_sql(uuid, users_objects, Bruger)
 
 
-handle_function_map = {
+handle_function_map: dict[_MORoutingKey, Callable[..., Awaitable[None]]] = {
     "address": handle_address,
     "association": handle_association,
     "class": handle_class,
@@ -253,56 +254,35 @@ handle_function_map = {
     "kle": handle_kle,
     "leave": handle_leave,
     "manager": handle_manager,
-    "related": handle_related,
+    "related_unit": handle_related,
     "org_unit": handle_org_unit,
     "person": handle_person,
 }
 
 
-@actualstate_router.register("address")
-@actualstate_router.register("association")
-@actualstate_router.register("class")
-@actualstate_router.register("engagement")
-@actualstate_router.register("facet")
-@actualstate_router.register("itsystem")
-@actualstate_router.register("ituser")
-@actualstate_router.register("kle")
-@actualstate_router.register("leave")
-@actualstate_router.register("manager")
-@actualstate_router.register("related")  # type: ignore
-@actualstate_router.register("org_unit")
-@actualstate_router.register("person")
+# GraphQL events carry only the subject (entity UUID) and a priority, not the
+# routing key, so the entity type is encoded in the listener path. MO emits one
+# event per entity type into the public "mo" namespace; ``handle_function_map``
+# enumerates the routing keys we listen for. Returning normally (2xx) acks the
+# event; raising (5xx) leaves it unacknowledged so MO redelivers it.
+@fastapi_router.post("/events/actualstate/{mo_type}")
 async def trigger_actual_state_event(
-    uuid: PayloadUUID,
+    mo_type: _MORoutingKey,
+    event: Event[UUID],
     sql_exporter: SqlExport,
-    key: MORoutingKey,
-    _: RateLimit,
-):
-    handle_function = handle_function_map[key]
-    return await handle_function(uuid=uuid, sql_exporter=sql_exporter)
+) -> None:
+    handle_function = handle_function_map[mo_type]
+    await handle_function(uuid=event.subject, sql_exporter=sql_exporter)
 
 
-@historic_router.register("address")
-@historic_router.register("association")
-@historic_router.register("class")
-@historic_router.register("engagement")
-@historic_router.register("facet")
-@historic_router.register("itsystem")
-@historic_router.register("ituser")
-@historic_router.register("kle")
-@historic_router.register("leave")
-@historic_router.register("manager")
-@historic_router.register("related")  # type: ignore
-@historic_router.register("org_unit")
-@historic_router.register("person")
+@fastapi_router.post("/events/historic/{mo_type}")
 async def trigger_historic_event(
-    uuid: PayloadUUID,
+    mo_type: _MORoutingKey,
+    event: Event[UUID],
     sql_exporter: SqlExportHistoric,
-    key: MORoutingKey,
-    _: RateLimit,
-):
-    handle_function = handle_function_map[key]
-    return await handle_function(uuid=uuid, sql_exporter=sql_exporter)
+) -> None:
+    handle_function = handle_function_map[mo_type]
+    await handle_function(uuid=event.subject, sql_exporter=sql_exporter)
 
 
 class Settings(DatabaseSettings):
@@ -323,14 +303,38 @@ def create_app(**kwargs) -> FastAPI:
     settings: Settings = Settings(**kwargs)
     settings.start_logging_based_on_settings()
 
+    graphql_events: GraphQLEvents | None = None
+    if settings.eventdriven:
+        # Add one listener per entity type and have them deliver to distinct paths.
+        # Use distinct user_keys to separate historic and actual state listeners.
+        listeners = [
+            Listener(
+                namespace="mo",
+                user_key=f"sql-export-actualstate-{mo_type}",
+                routing_key=mo_type,
+                path=f"/events/actualstate/{mo_type}",
+            )
+            for mo_type in handle_function_map
+        ]
+        if settings.historic_state is not None:
+            listeners += [
+                Listener(
+                    namespace="mo",
+                    user_key=f"sql-export-historic-{mo_type}",
+                    routing_key=mo_type,
+                    path=f"/events/historic/{mo_type}",
+                )
+                for mo_type in handle_function_map
+            ]
+        graphql_events = GraphQLEvents(declare_listeners=listeners)
+
     fastramqpi = FastRAMQPI(
-        application_name="sql-export", settings=settings.fastramqpi, graphql_version=22
+        application_name="sql-export",
+        settings=settings.fastramqpi,
+        graphql_version=22,
+        graphql_events=graphql_events,
     )
     if settings.eventdriven:
-        amqpsystem = fastramqpi.get_amqpsystem()
-        amqpsystem.router.registry.update(actualstate_router.registry)
-        if settings.historic_state is not None:
-            amqpsystem.router.registry.update(historic_router.registry)
         # "Disable" last run metric to avoid erroneous alerts; it does not make
         # sense for an event-driven integration without a rundb.
         dipex_last_success_timestamp.set_function(time.time)
