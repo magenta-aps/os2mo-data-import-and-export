@@ -1,37 +1,22 @@
-import json
 import logging
-from operator import itemgetter
-from typing import Dict
-from typing import List
+from dataclasses import dataclass
+from typing import Iterator
 from typing import Never
-from typing import Set
-from typing import Tuple
 from uuid import UUID
-from uuid import uuid4
 
 import click
-import jmespath
-import requests
-from fastramqpi.ra_utils.deprecation import deprecated
 from fastramqpi.ra_utils.load_settings import load_setting
-from fastramqpi.ra_utils.load_settings import load_settings
 from fastramqpi.ra_utils.tqdm_wrapper import tqdm
 from fastramqpi.ra_utils.transpose_dict import transpose_dict
 from fastramqpi.raclients.graph.client import GraphQLClient
 from gql import gql
 from gql.client import SyncClientSession
-from more_itertools import one
-from more_itertools import only
 from more_itertools import unzip
 from pydantic import AnyHttpUrl
 
-jms_bvn = jmespath.compile(
-    "registreringer[0].attributter.klasseegenskaber[0].brugervendtnoegle"
-)
-jms_title = jmespath.compile("registreringer[0].attributter.klasseegenskaber[0].titel")
-jms_facet = jmespath.compile("registreringer[0].relationer.facet[0].uuid")
-
 logger = logging.getLogger(__name__)
+
+MO_GRAPHQL_VERSION = "v29"
 
 
 def raise_lora_discontinued_error() -> Never:
@@ -47,92 +32,255 @@ def raise_lora_discontinued_error() -> Never:
     )
 
 
-def check_relations(
-    session,
-    base: str,
-    uuid: UUID,
-    relation_type: str = "organisation/organisationfunktion",
-) -> List[dict]:
-    """Find all objects related to the class with the given uuid.
-
-    Returns a list of objects, or an empty list if no objects related to the given uuid are found.
-    """
-    r = session.get(
-        base
-        + f"/{relation_type}?vilkaarligrel={str(uuid)}&list=true&virkningfra=-infinity"
+def graphql_client(
+    mora_base: str,
+    client_id: str,
+    client_secret: str,
+    auth_realm: str,
+    auth_server: AnyHttpUrl,
+) -> GraphQLClient:
+    """Construct a synchronous MO GraphQL client."""
+    return GraphQLClient(
+        url=f"{mora_base}/graphql/{MO_GRAPHQL_VERSION}",
+        client_id=client_id,
+        client_secret=client_secret,
+        auth_realm=auth_realm,
+        auth_server=auth_server,
+        sync=True,
+        httpx_client_kwargs={"timeout": None},
     )
-    r.raise_for_status()
-    res = r.json()["results"]
-    return only(res, default=[])
 
 
-def delete_class(session, base: str, uuid: UUID) -> None:
-    """Delete the class with the given uuid."""
-    r = session.delete(base + f"/klassifikation/klasse/{str(uuid)}")
-    r.raise_for_status()
+@dataclass(frozen=True)
+class ClassRelation:
+    """A class-bearing field on a MO object type.
+
+    Describes how to find objects referencing a class through the field, and
+    how to update the field to point at another class.
+    """
+
+    collection: str  # top-level GraphQL collection, e.g. "engagements"
+    response_field: str  # class field on the object, e.g. "engagement_type_response"
+    mutation: str  # update mutation, e.g. "engagement_update"
+    input_type: str  # GraphQL input type of the mutation
+    input_field: str  # field on the update input, e.g. "engagement_type"
+    # Server-side ClassFilter name. Fields without one require a full scan of
+    # the collection, filtering client-side.
+    filter_name: str | None = None
+    is_list: bool = False  # whether the field holds a list of classes
+    # (query field, input field) pairs which the update mutation requires even
+    # when unchanged, e.g. rolebindings' ituser.
+    extra_fields: tuple[tuple[str, str], ...] = ()
+
+
+CLASS_RELATIONS = [
+    ClassRelation("engagements", "engagement_type_response", "engagement_update", "EngagementUpdateInput", "engagement_type", filter_name="engagement_type"),
+    ClassRelation("engagements", "job_function_response", "engagement_update", "EngagementUpdateInput", "job_function", filter_name="job_function"),
+    ClassRelation("engagements", "primary_response", "engagement_update", "EngagementUpdateInput", "primary"),
+    ClassRelation("addresses", "address_type_response", "address_update", "AddressUpdateInput", "address_type", filter_name="address_type"),
+    ClassRelation("addresses", "visibility_response", "address_update", "AddressUpdateInput", "visibility", filter_name="visibility"),
+    ClassRelation("associations", "association_type_response", "association_update", "AssociationUpdateInput", "association_type", filter_name="association_type"),
+    ClassRelation("associations", "primary_response", "association_update", "AssociationUpdateInput", "primary"),
+    ClassRelation("associations", "trade_union_response", "association_update", "AssociationUpdateInput", "trade_union"),
+    ClassRelation("itusers", "primary_response", "ituser_update", "ITUserUpdateInput", "primary", filter_name="primary"),
+    ClassRelation("kles", "kle_number_response", "kle_update", "KLEUpdateInput", "kle_number"),
+    ClassRelation("kles", "kle_aspects_response", "kle_update", "KLEUpdateInput", "kle_aspects", is_list=True),
+    ClassRelation("leaves", "leave_type_response", "leave_update", "LeaveUpdateInput", "leave_type"),
+    ClassRelation("managers", "manager_type_response", "manager_update", "ManagerUpdateInput", "manager_type", filter_name="manager_type"),
+    ClassRelation("managers", "manager_level_response", "manager_update", "ManagerUpdateInput", "manager_level"),
+    ClassRelation("managers", "responsibilities_response", "manager_update", "ManagerUpdateInput", "responsibility", filter_name="responsibility", is_list=True),
+    ClassRelation("org_units", "unit_type_response", "org_unit_update", "OrganisationUnitUpdateInput", "org_unit_type"),
+    ClassRelation("org_units", "unit_level_response", "org_unit_update", "OrganisationUnitUpdateInput", "org_unit_level"),
+    ClassRelation("org_units", "time_planning_response", "org_unit_update", "OrganisationUnitUpdateInput", "time_planning"),
+    ClassRelation("org_units", "unit_hierarchy_response", "org_unit_update", "OrganisationUnitUpdateInput", "org_unit_hierarchy", filter_name="hierarchy"),
+    ClassRelation("rolebindings", "role_response", "rolebinding_update", "RoleBindingUpdateInput", "role", filter_name="role", extra_fields=(("ituser_response", "ituser"),)),
+]  # fmt: skip
+
+
+@dataclass(frozen=True)
+class ClassUsage:
+    """A single validity of a MO object referencing the sought class."""
+
+    relation: ClassRelation
+    object_uuid: str
+    validity: dict  # {"from": ..., "to": ...}
+    class_uuids: list[str]  # current value(s) of the field in this validity
+    extra: dict  # extra required update input fields, e.g. rolebindings' ituser
+
+
+def _validity_selection(relations: list[ClassRelation]) -> str:
+    fields = []
+    for relation in relations:
+        if relation.is_list:
+            # List fields are paged in the GraphQL schema
+            fields.append(f"{relation.response_field} {{ objects {{ uuid }} }}")
+        else:
+            fields.append(f"{relation.response_field} {{ uuid }}")
+        for query_field, _ in relation.extra_fields:
+            fields.append(f"{query_field} {{ uuid }}")
+    return " ".join(fields)
+
+
+def _build_usage_query(
+    collection: str, relations: list[ClassRelation], filter_name: str | None
+):
+    if filter_name is not None:
+        variables = "$limit: int!, $cursor: Cursor, $class_uuids: [UUID!]"
+        object_filter = f"{{from_date: null, to_date: null, {filter_name}: {{uuids: $class_uuids}}}}"
+    else:
+        variables = "$limit: int!, $cursor: Cursor"
+        object_filter = "{from_date: null, to_date: null}"
+    return gql(
+        f"""
+        query FindClassUsages({variables}) {{
+            {collection}(limit: $limit, cursor: $cursor, filter: {object_filter}) {{
+                objects {{
+                    uuid
+                    validities(start: null, end: null) {{
+                        validity {{ from to }}
+                        {_validity_selection(relations)}
+                    }}
+                }}
+                page_info {{ next_cursor }}
+            }}
+        }}
+        """
+    )
+
+
+def find_class_usages(
+    session: SyncClientSession, class_uuid: UUID, page_size: int = 500
+) -> Iterator[ClassUsage]:
+    """Find every object validity referencing the class with the given uuid.
+
+    Uses server-side filtering for the class fields that support it, and falls
+    back to a full scan of the collection for those that do not.
+    """
+    class_uuid_str = str(class_uuid)
+
+    filtered = [r for r in CLASS_RELATIONS if r.filter_name is not None]
+    query_groups = [(r.collection, [r], r.filter_name) for r in filtered]
+    scanned: dict[str, list[ClassRelation]] = {}
+    for relation in CLASS_RELATIONS:
+        if relation.filter_name is None:
+            scanned.setdefault(relation.collection, []).append(relation)
+    query_groups.extend(
+        (collection, relations, None) for collection, relations in scanned.items()
+    )
+
+    for collection, relations, filter_name in query_groups:
+        query = _build_usage_query(collection, relations, filter_name)
+        variables: dict = {"limit": page_size, "cursor": None}
+        if filter_name is not None:
+            variables["class_uuids"] = [class_uuid_str]
+        while True:
+            result = session.execute(query, variable_values=variables)
+            data = result[collection]
+            for obj in data["objects"]:
+                for validity in obj["validities"]:
+                    for relation in relations:
+                        node = validity[relation.response_field]
+                        if relation.is_list:
+                            uuids = [c["uuid"] for c in node["objects"]] if node else []
+                        else:
+                            uuids = [node["uuid"]] if node else []
+                        if class_uuid_str not in uuids:
+                            continue
+                        extra = {
+                            input_field: validity[query_field]["uuid"]
+                            for query_field, input_field in relation.extra_fields
+                        }
+                        yield ClassUsage(
+                            relation=relation,
+                            object_uuid=obj["uuid"],
+                            validity=validity["validity"],
+                            class_uuids=uuids,
+                            extra=extra,
+                        )
+            cursor = data["page_info"]["next_cursor"]
+            if cursor is None:
+                break
+            variables["cursor"] = cursor
 
 
 def switch_class(
-    session,
-    base: str,
-    payload: str,
-    new_uuid: UUID,
-    uuid_set: Set[str],
-    copy: bool = False,
-    relation_type: str = "organisation/organisationfunktion",
+    session: SyncClientSession, usage: ClassUsage, old_uuid: UUID, new_uuid: UUID
 ) -> None:
-    """Switch an objects related class.
+    """Point one object validity at a different class."""
+    relation = usage.relation
+    if relation.is_list:
+        # Replace old with new, deduplicating in case both were present
+        new_value: list[str] | str = list(
+            dict.fromkeys(
+                str(new_uuid) if u == str(old_uuid) else u for u in usage.class_uuids
+            )
+        )
+    else:
+        new_value = str(new_uuid)
+    mutation = gql(
+        f"""
+        mutation SwitchClass($input: {relation.input_type}!) {{
+            {relation.mutation}(input: $input) {{ uuid }}
+        }}
+        """
+    )
+    session.execute(
+        mutation,
+        variable_values={
+            "input": {
+                "uuid": usage.object_uuid,
+                "validity": usage.validity,
+                relation.input_field: new_value,
+                **usage.extra,
+            }
+        },
+    )
 
-    Given an object payload and an uuid this function wil switch the class that an object is related to.
-    Only switches class if it is in the set uuid_set.
+
+def move_class_helper(
+    session: SyncClientSession,
+    old_uuid: UUID,
+    new_uuid: UUID,
+    dry_run: bool = False,
+) -> int:
+    """Move all objects from one class to another.
+
+    Finds every object validity referencing 'old_uuid' and updates it to
+    reference 'new_uuid' instead. Returns the number of updates made (or, on
+    dry-run, that would have been made).
     """
-    object_uuid = UUID(payload["id"])  # type: ignore
-    payload = payload["registreringer"][0]  # type: ignore
-    # Drop data we don't need to post
-    payload = {
-        item: payload.get(item)  # type: ignore
-        for item in ("attributter", "relationer", "tilstande")  # type: ignore
-    }  # type: ignore
-
-    # Change all uuids from uuid_set to new_uuid.
-    p_string = json.dumps(payload)
-    for old_uuid in uuid_set:
-        p_string = p_string.replace(str(old_uuid), str(new_uuid))
-    payload = json.loads(p_string)
-
-    if copy:
-        object_uuid = uuid4()
-
-    r = session.put(base + f"/{relation_type}/{str(object_uuid)}", json=payload)
-    r.raise_for_status()
+    count = 0
+    usages = find_class_usages(session, old_uuid)
+    for usage in tqdm(usages, desc="Changing class for objects"):
+        count += 1
+        if dry_run:
+            click.echo(
+                f"Would update {usage.relation.input_field} on "
+                f"{usage.relation.collection} {usage.object_uuid} "
+                f"(validity {usage.validity['from']} - {usage.validity['to']})"
+            )
+            continue
+        switch_class(session, usage, old_uuid, new_uuid)
+    return count
 
 
-def read_classes(session, mox_base: str, historic: bool = False) -> List[Dict]:
-    """Read all classes from MO"""
-    url = mox_base + "/klassifikation/klasse?list=1"
-    url = url + "&virkningfra=-infinity&virkningtil=infinity" if historic else url
-    r = session.get(url)
-    r.raise_for_status()
-    return one(r.json()["results"])
-
-
-def get_relevant_info(all_classes: List[Dict]) -> Tuple[List, List, List, List]:
-    """From the full MO response find uuids, bvns and titles of the classes and the uuid of the facet the class exists in.
-
-    >>> all_classes = [{'id': '13158594-13f8-4d16-85da-b8d7f00351d2', 'registreringer': [{'fratidspunkt': {'tidsstempeldatotid': '2021-04-28T17:46:41.27874+00:00', 'graenseindikator': True}, 'tiltidspunkt': {'tidsstempeldatotid': 'infinity'}, 'livscykluskode': 'Importeret', 'brugerref': '42c432e8-9c4a-11e6-9f62-873cf34a735f', 'attributter': {'klasseegenskaber': [{'brugervendtnoegle': 'test_bvn', 'omfang': 'TEXT', 'titel': 'Test Title', 'virkning': {'from': '1930-01-01 12:02:32+00', 'to': 'infinity', 'from_included': True, 'to_included': False}}]}, 'tilstande': {'klassepubliceret': [{'virkning': {'from': '1930-01-01 12:02:32+00', 'to': 'infinity', 'from_included': True, 'to_included': False}, 'publiceret': 'Publiceret'}]}, 'relationer': {'ansvarlig': [{'virkning': {'from': '1930-01-01 12:02:32+00', 'to': 'infinity', 'from_included': True, 'to_included': False}, 'uuid': '65b7feb6-0126-a033-550e-e52836610e1a', 'objekttype': 'organisation'}], 'facet': [{'virkning': {'from': '1930-01-01 12:02:32+00', 'to': 'infinity', 'from_included': True, 'to_included': False}, 'uuid': '2dd34236-c9ec-4059-9252-298f161e9b56'}]}}]}]
-    >>> get_relevant_info(all_classes)
-    (['13158594-13f8-4d16-85da-b8d7f00351d2'], ['test_bvn'], ['Test Title'], ['2dd34236-c9ec-4059-9252-298f161e9b56'])
-    """
-    class_uuids = list(map(itemgetter("id"), all_classes))
-    class_bvns = list(map(lambda c: jms_bvn.search(c), all_classes))
-    class_titles = list(map(lambda c: jms_title.search(c), all_classes))
-    facet_uuids = list(map(lambda c: jms_facet.search(c), all_classes))
-    return class_uuids, class_bvns, class_titles, facet_uuids
+def delete_class(session: SyncClientSession, uuid: UUID) -> None:
+    """Delete the class with the given uuid."""
+    mutation = gql(
+        """
+        mutation DeleteClass($uuid: UUID!) {
+            class_delete(uuid: $uuid) {
+                uuid
+            }
+        }
+        """
+    )
+    session.execute(mutation, variable_values={"uuid": str(uuid)})
 
 
 def filter_duplicates(
     class_uuids, class_bvns, class_titles, facet_uuids
-) -> List[List[Tuple[UUID, str]]]:
+) -> dict[tuple[str, str], list[tuple[str, str]]]:
     """Transforms data from classes to a list of duplicate classes in facets.
 
     Example 1) there are two classes called "test", but they are in different facets:
@@ -164,20 +312,6 @@ def filter_duplicates(
     return transposed  # type: ignore
 
 
-@deprecated
-def find_duplicates_classes(session, mox_base: str) -> List[List[Tuple[UUID, str]]]:
-    """Find classes within a facet that are duplicates.
-
-    Deprecated:
-        Use `find_duplicate_classes` instead
-
-    Returns a list of lists containing uuids and titles of classes that are duplicates.
-    """
-    all_classes = read_classes(session, mox_base)
-    class_uuids, class_bvns, class_titles, facet_uuids = get_relevant_info(all_classes)
-    return filter_duplicates(class_uuids, class_bvns, class_titles, facet_uuids)
-
-
 # TODO: set up integration tests that check that duplicates are acutally found. I tested it manually by spinning up mo
 #       and creating a duplicate class manually.
 def find_duplicate_classes(
@@ -186,19 +320,18 @@ def find_duplicate_classes(
     client_secret: str,
     auth_realm: str,
     auth_server: AnyHttpUrl,
-) -> list[list[tuple[UUID, str]]]:
+) -> dict[tuple[str, str], list[tuple[str, str]]]:
     """Find classes within a facet that are duplicates.
 
-    Returns a list of lists containing uuids and titles of classes that are duplicates.
+    Returns a dict mapping (lowercase user-key, facet uuid) to lists of
+    (uuid, name) of classes that are duplicates.
     """
-    with GraphQLClient(
-        url=f"{mora_base}/graphql/v29",
+    with graphql_client(
+        mora_base=mora_base,
         client_id=client_id,
         client_secret=client_secret,
         auth_realm=auth_realm,
         auth_server=auth_server,
-        sync=True,
-        httpx_client_kwargs={"timeout": None},
     ) as session:
         assert isinstance(session, SyncClientSession)
         q = gql(
@@ -238,6 +371,31 @@ def find_duplicate_classes(
         return filter_duplicates(class_uuids, class_user_keys, class_names, facet_uuids)
 
 
+def graphql_options(fn):
+    fn = click.option(
+        "--auth-server",
+        envvar="AUTH_SERVER",
+        default="http://localhost:5000/auth",
+        help="URL of the Keycloak server",
+    )(fn)
+    fn = click.option(
+        "--auth-realm", envvar="AUTH_REALM", default="mo", help="Keycloak realm"
+    )(fn)
+    fn = click.option(
+        "--client-secret", envvar="CLIENT_SECRET", required=True, help="Client secret"
+    )(fn)
+    fn = click.option(
+        "--client-id", envvar="CLIENT_ID", default="dipex", help="Client ID"
+    )(fn)
+    fn = click.option(
+        "--mora-base",
+        envvar="MORA_BASE",
+        default="http://localhost:5000",
+        help="URL for MO",
+    )(fn)
+    return fn
+
+
 @click.group()
 def cli():
     pass
@@ -252,82 +410,66 @@ def cli():
     required=False,
     help="Remove any class that has duplicates",
 )
-@click.option(
-    "--mox-base",
-    help="URL for MOX",
-    type=click.STRING,
-    default=lambda: load_settings().get("mox.base", "http://localhost:5000/lora/"),
-)
-def remove_dup_classes(delete: bool, mox_base: click.STRING):  # type: ignore
+@graphql_options
+def remove_dup_classes(
+    delete: bool,
+    mora_base: str,
+    client_id: str,
+    client_secret: str,
+    auth_realm: str,
+    auth_server: str,
+):
     """Tool to help remove classes from MO that are duplicates.
 
     This tool is written to help clean up engagement_types that had the same name, but with different casing.
     If no argument is given it will print the amount of duplicated classses.
     If the `--delete` flag is supplied you will be prompted to choose a class to keep for each duplicate.
-    In case there are no differences to
     Objects related to the other class will be transferred to the selected class and the other class deleted.
     """
-
-    session = requests.Session()
-
-    duplicate_bvn_facet = find_duplicates_classes(session=session, mox_base=mox_base)
+    duplicate_bvn_facet = find_duplicate_classes(
+        mora_base=mora_base,
+        client_id=client_id,
+        client_secret=client_secret,
+        auth_realm=auth_realm,
+        auth_server=auth_server,  # type: ignore
+    )
 
     if not delete:
         click.echo(f"There are {len(duplicate_bvn_facet)} duplicate class(es).")
         return
 
-    for dup_class in tqdm(
-        duplicate_bvn_facet.values(),  # type: ignore
-        desc="Deleting duplicate classes",  # type: ignore
-    ):
-        uuids, titles = unzip(dup_class)
-        uuid_set = set(uuids)
-        title_set = set(titles)
+    with graphql_client(
+        mora_base=mora_base,
+        client_id=client_id,
+        client_secret=client_secret,
+        auth_realm=auth_realm,
+        auth_server=auth_server,  # type: ignore
+    ) as session:
+        assert isinstance(session, SyncClientSession)
+        for dup_class in tqdm(
+            duplicate_bvn_facet.values(), desc="Deleting duplicate classes"
+        ):
+            _, titles = unzip(dup_class)
+            title_set = set(titles)
 
-        # Check if all found titles are exactly the same. Only prompt for a choice if they are not.
-        keep = 1
-        if len(title_set) != 1:
-            click.echo("These are the choices:")
-            # Generate a prompt to display
-            msg = "\n".join(f"  {i}: {x[1]}" for i, x in enumerate(dup_class, start=1))
-            click.echo(msg)
-            keep = click.prompt("Choose the one to keep", type=int, default=1)
-        kept_uuid, _ = dup_class[keep - 1]
-        for i, obj in enumerate(dup_class, start=1):
-            if i == keep:
-                continue
-            uuid, _ = obj
-            rel = check_relations(session, mox_base, uuid)
-            for payload in tqdm(rel, desc="Changing class for objects"):
-                switch_class(session, mox_base, payload, kept_uuid, uuid_set)
-            delete_class(session, mox_base, uuid)
-
-
-def move_class_helper(
-    old_uuid: click.UUID,  # type: ignore
-    new_uuid: click.UUID,  # type: ignore
-    copy: bool,
-    mox_base: str,
-    relation_type: str = "organisation/organisationfunktion",
-):
-    """Moves (or copies) objects from one class to another.
-
-    Reads all object of a given relation_type (default is organisationfunktion)
-    and replaces the given 'old_uuid' with a new uuid of a different class.
-    Able to copy to new relation instead of moving.
-    """
-    session = requests.Session()
-    rel = check_relations(session, mox_base, old_uuid, relation_type=relation_type)
-    for payload in tqdm(rel, desc="Changing class for objects"):
-        switch_class(
-            session,
-            mox_base,
-            payload,
-            new_uuid,
-            {old_uuid},
-            copy=copy,
-            relation_type=relation_type,
-        )
+            # Check if all found titles are exactly the same. Only prompt for a choice if they are not.
+            keep = 1
+            if len(title_set) != 1:
+                click.echo("These are the choices:")
+                # Generate a prompt to display
+                msg = "\n".join(
+                    f"  {i}: {x[1]}" for i, x in enumerate(dup_class, start=1)
+                )
+                click.echo(msg)
+                keep = int(
+                    click.prompt("Choose the one to keep", type=int, default="1")
+                )
+            kept_uuid, _ = dup_class[keep - 1]
+            for i, (uuid, _) in enumerate(dup_class, start=1):
+                if i == keep:
+                    continue
+                move_class_helper(session=session, old_uuid=uuid, new_uuid=kept_uuid)
+                delete_class(session, uuid)
 
 
 @cli.command()
@@ -344,23 +486,35 @@ def move_class_helper(
     help="UUID of new class",
 )
 @click.option(
-    "--copy",
+    "--dry-run",
     is_flag=True,
-    help="Copy to a new object instead of switching class",
+    help="Print the objects that would be updated without changing anything",
 )
-@click.option(
-    "--mox-base",
-    help="URL for MOX",
-    type=click.STRING,
-    default=lambda: load_settings().get("mox.base", "http://localhost:5000/lora/"),
-)
-def move_class(old_uuid: click.UUID, new_uuid: click.UUID, copy: bool, mox_base: str):  # type: ignore
-    """Switches class, or copies to a new class for all objects using this class given two UUIDs.
-    if --copy is supplied a new UUID will be generated for each object so that no objects are moved, only copied.
-    """
-    move_class_helper(
-        old_uuid=old_uuid, new_uuid=new_uuid, copy=copy, mox_base=mox_base
-    )
+@graphql_options
+def move_class(
+    old_uuid: UUID,
+    new_uuid: UUID,
+    dry_run: bool,
+    mora_base: str,
+    client_id: str,
+    client_secret: str,
+    auth_realm: str,
+    auth_server: str,
+):
+    """Switches class for all objects using this class given two UUIDs."""
+    with graphql_client(
+        mora_base=mora_base,
+        client_id=client_id,
+        client_secret=client_secret,
+        auth_realm=auth_realm,
+        auth_server=auth_server,  # type: ignore
+    ) as session:
+        assert isinstance(session, SyncClientSession)
+        count = move_class_helper(
+            session=session, old_uuid=old_uuid, new_uuid=new_uuid, dry_run=dry_run
+        )
+        action = "Would update" if dry_run else "Updated"
+        click.echo(f"{action} {count} object validities")
 
 
 @cli.command()
