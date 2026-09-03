@@ -50,6 +50,7 @@ from .trigger import trigger_router
 logger = logging.getLogger(__name__)
 
 fastapi_router = APIRouter()
+event_trigger_router = APIRouter()
 
 SqlExport = Annotated[_SqlExport, Depends(from_user_context("sql_exporter"))]
 SqlExportHistoric = Annotated[
@@ -265,7 +266,7 @@ handle_function_map: dict[_MORoutingKey, Callable[..., Awaitable[None]]] = {
 # event per entity type into the public "mo" namespace; ``handle_function_map``
 # enumerates the routing keys we listen for. Returning normally (2xx) acks the
 # event; raising (5xx) leaves it unacknowledged so MO redelivers it.
-@fastapi_router.post("/events/actualstate/{mo_type}")
+@event_trigger_router.post("/events/actualstate/{mo_type}")
 async def trigger_actual_state_event(
     mo_type: _MORoutingKey,
     event: Event[UUID],
@@ -275,7 +276,7 @@ async def trigger_actual_state_event(
     await handle_function(uuid=event.subject, sql_exporter=sql_exporter)
 
 
-@fastapi_router.post("/events/historic/{mo_type}")
+@event_trigger_router.post("/events/historic/{mo_type}")
 async def trigger_historic_event(
     mo_type: _MORoutingKey,
     event: Event[UUID],
@@ -344,6 +345,8 @@ def create_app(**kwargs) -> FastAPI:
 
     app = fastramqpi.get_app()
     app.include_router(fastapi_router)
+    if settings.eventdriven:
+        app.include_router(event_trigger_router)
 
     @asynccontextmanager
     async def sql_exporter(full_history) -> AsyncGenerator[None, None]:
